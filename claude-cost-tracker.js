@@ -1,9 +1,15 @@
 #!/usr/bin/env node
-
+ 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
+ 
+/*
+* ---------------------------------------------------------
+* Paths
+* ---------------------------------------------------------
+*/
  
 const APP_DIR = path.join(
     os.homedir(),
@@ -30,21 +36,41 @@ const LOCAL_SETTINGS_PATH = path.join(
     "settings.json"
 );
  
-const CONFIG_PATH = path.join(
+const GLOBAL_CONFIG_PATH = path.join(
     APP_DIR,
     "config.json"
 );
  
-const BACKUP_PATH = path.join(
+const GLOBAL_BACKUP_PATH = path.join(
     APP_DIR,
     "original-statusline.json"
 );
  
-const PROXY_SCRIPT_PATH = 
-    path.resolve(process.argv[1]);
-
+const LOCAL_CONFIG_PATH = path.join(
+    LOCAL_CLAUDE_DIR,
+    "cost-tracker.json"
+);
+ 
+/*
+* Absolute path to this script.
+*
+* Claude Code will use this path instead of relying
+* on PATH to find "claude-cost-tracker".
+*/
+ 
+const SCRIPT_PATH = path.resolve(
+    process.argv[1]
+);
+ 
 const PROXY_COMMAND =
-    `node "${PROXY_SCRIPT_PATH}" proxy`;
+    `node "${SCRIPT_PATH}" proxy`;
+ 
+ 
+/*
+* ---------------------------------------------------------
+* Entry point
+* ---------------------------------------------------------
+*/
  
 async function main() {
     const command = process.argv[2];
@@ -67,6 +93,13 @@ async function main() {
             process.exit(1);
     }
 }
+ 
+ 
+/*
+* ---------------------------------------------------------
+* Help
+* ---------------------------------------------------------
+*/
  
 function printHelp() {
     console.log(`
@@ -91,6 +124,13 @@ Usage:
 `);
 }
  
+ 
+/*
+* ---------------------------------------------------------
+* INSTALL
+* ---------------------------------------------------------
+*/
+ 
 async function install() {
     const isLocal =
         process.argv.includes("--local");
@@ -99,9 +139,8 @@ async function install() {
         ? LOCAL_SETTINGS_PATH
         : GLOBAL_SETTINGS_PATH;
  
-    const settingsDir = path.dirname(
-        settingsPath
-    );
+    const settingsDir =
+        path.dirname(settingsPath);
  
     fs.mkdirSync(
         settingsDir,
@@ -112,7 +151,7 @@ async function install() {
         readJsonOrEmpty(settingsPath);
  
     /*
-     * Check whether our proxy is already installed.
+     * Already installed?
      */
  
     if (
@@ -120,80 +159,76 @@ async function install() {
         PROXY_COMMAND
     ) {
         console.log(
-            "Claude Cost Tracker is already installed."
+            `Claude Cost Tracker is already installed ${
+                isLocal ? "locally" : "globally"
+            }.`
         );
  
         return;
     }
  
     /*
-     * Save existing statusLine.
+     * Save existing Status Line.
      */
  
     const existingStatusLine =
         settings.statusLine ?? null;
  
     /*
-     * If another status line exists,
-     * remember it as downstream.
+     * LOCAL INSTALL
      */
  
-    if (existingStatusLine) {
-        const config = {
-            downstream: {
-                type:
-                    existingStatusLine.type ??
-                    "command",
- 
-                command:
-                    existingStatusLine.command
-            }
+    if (isLocal) {
+        const localConfig = {
+            installed: true,
+            originalStatusLine:
+                existingStatusLine
         };
  
+        writeJson(
+            LOCAL_CONFIG_PATH,
+            localConfig
+        );
+    }
+ 
+    /*
+     * GLOBAL INSTALL
+     */
+ 
+    else {
         fs.mkdirSync(
             APP_DIR,
             { recursive: true }
         );
  
         writeJson(
-            CONFIG_PATH,
-            config
-        );
- 
-        writeJson(
-            BACKUP_PATH,
+            GLOBAL_BACKUP_PATH,
             {
                 statusLine:
                     existingStatusLine
             }
         );
-    } else {
-        /*
-         * No existing status line.
-         */
- 
-        fs.mkdirSync(
-            APP_DIR,
-            { recursive: true }
-        );
  
         writeJson(
-            CONFIG_PATH,
+            GLOBAL_CONFIG_PATH,
             {
-                downstream: null
-            }
-        );
+                downstream:
+                    existingStatusLine
+                        ? {
+                            type:
+                                existingStatusLine.type ??
+                                "command",
  
-        writeJson(
-            BACKUP_PATH,
-            {
-                statusLine: null
+                            command:
+                                existingStatusLine.command
+                        }
+                        : null
             }
         );
     }
  
     /*
-     * Replace statusLine with our proxy.
+     * Replace Status Line with our proxy.
      */
  
     settings.statusLine = {
@@ -208,24 +243,29 @@ async function install() {
  
     console.log(
         `Claude Cost Tracker installed ${
-            isLocal
-                ? "locally"
-                : "globally"
+            isLocal ? "locally" : "globally"
         }.`
     );
  
     if (existingStatusLine) {
         console.log(
-            `Downstream status line saved: ${
+            `Previous Status Line: ${
                 existingStatusLine.command
             }`
         );
     } else {
         console.log(
-            "No existing status line was found."
+            "No previous Status Line found."
         );
     }
 }
+ 
+ 
+/*
+* ---------------------------------------------------------
+* UNINSTALL
+* ---------------------------------------------------------
+*/
  
 async function uninstall() {
     const isLocal =
@@ -249,7 +289,7 @@ async function uninstall() {
         readJsonOrEmpty(settingsPath);
  
     /*
-     * Do not modify another configuration.
+     * Make sure we're uninstalling OUR proxy.
      */
  
     if (
@@ -257,22 +297,71 @@ async function uninstall() {
         PROXY_COMMAND
     ) {
         console.log(
-            "Claude Cost Tracker is not installed here."
+            `Claude Cost Tracker is not installed ${
+                isLocal ? "locally" : "globally"
+            }.`
         );
  
         return;
     }
  
     /*
-     * Restore original status line.
+     * LOCAL
+     */
+ 
+    if (isLocal) {
+        const config =
+            readJsonOrEmpty(
+                LOCAL_CONFIG_PATH
+            );
+ 
+        if (
+            config.originalStatusLine
+        ) {
+            settings.statusLine =
+                config.originalStatusLine;
+        } else {
+            delete settings.statusLine;
+        }
+ 
+        writeJson(
+            settingsPath,
+            settings
+        );
+ 
+        /*
+         * Remove local tracker config.
+         */
+ 
+        if (
+            fs.existsSync(
+                LOCAL_CONFIG_PATH
+            )
+        ) {
+            fs.unlinkSync(
+                LOCAL_CONFIG_PATH
+            );
+        }
+ 
+        console.log(
+            "Claude Cost Tracker local installation removed."
+        );
+ 
+        return;
+    }
+ 
+    /*
+     * GLOBAL
      */
  
     if (
-        fs.existsSync(BACKUP_PATH)
+        fs.existsSync(
+            GLOBAL_BACKUP_PATH
+        )
     ) {
         const backup =
             readJsonOrEmpty(
-                BACKUP_PATH
+                GLOBAL_BACKUP_PATH
             );
  
         if (
@@ -293,166 +382,278 @@ async function uninstall() {
     );
  
     console.log(
-        `Claude Cost Tracker ${
-            isLocal
-                ? "local"
-                : "global"
-        } installation removed.`
+        "Claude Cost Tracker global installation removed."
     );
 }
  
-async function proxy() {
-    let input = "";
  
-    process.stdin.setEncoding(
+/*
+* ---------------------------------------------------------
+* PROXY
+* ---------------------------------------------------------
+*/
+ 
+async function proxy() {
+    const input =
+        await readStdin();
+ 
+    let payload;
+ 
+    try {
+        payload =
+            JSON.parse(input);
+    } catch {
+        console.error(
+            "Claude Cost Tracker: invalid JSON."
+        );
+ 
+        process.exit(1);
+    }
+ 
+    /*
+     * Determine whether this invocation
+     * belongs to a local installation.
+     *
+     * We check the current project's .claude
+     * settings first.
+     */
+ 
+    const localSettings =
+        readJsonOrEmpty(
+            LOCAL_SETTINGS_PATH
+        );
+ 
+    const globalSettings =
+        readJsonOrEmpty(
+            GLOBAL_SETTINGS_PATH
+        );
+ 
+    let downstream = null;
+ 
+    /*
+     * Local Status Line has priority.
+     */
+ 
+    if (
+        localSettings.statusLine?.command ===
+        PROXY_COMMAND
+    ) {
+        const localConfig =
+            readJsonOrEmpty(
+                LOCAL_CONFIG_PATH
+            );
+ 
+        downstream =
+            localConfig.originalStatusLine;
+    }
+ 
+    /*
+     * Otherwise use global configuration.
+     */
+ 
+    else {
+        const globalConfig =
+            readJsonOrEmpty(
+                GLOBAL_CONFIG_PATH
+            );
+ 
+        downstream =
+            globalConfig.downstream;
+    }
+ 
+    /*
+     * Save cost.
+     */
+ 
+    const sessionId =
+        payload.session_id;
+ 
+    const totalCost =
+        payload.cost?.total_cost_usd;
+ 
+    const sessionsDir =
+        path.join(
+            APP_DIR,
+            "sessions"
+        );
+ 
+    fs.mkdirSync(
+        sessionsDir,
+        { recursive: true }
+    );
+ 
+    /*
+     * Save complete input.
+     */
+ 
+    fs.writeFileSync(
+        path.join(
+            APP_DIR,
+            "last-input.json"
+        ),
+        input,
         "utf8"
     );
  
-    process.stdin.on(
+    /*
+     * Save session cost.
+     */
+ 
+    if (
+        sessionId &&
+        typeof totalCost ===
+            "number"
+    ) {
+        writeJson(
+            path.join(
+                sessionsDir,
+                `${sessionId}.json`
+            ),
+            {
+                session_id:
+                    sessionId,
+ 
+                total_cost_usd:
+                    totalCost,
+ 
+                updated_at:
+                    new Date()
+                        .toISOString()
+            }
+        );
+    }
+ 
+    /*
+     * No downstream Status Line.
+     */
+ 
+    if (
+        !downstream?.command
+    ) {
+        return;
+    }
+ 
+    /*
+     * Start downstream.
+     */
+ 
+    const child =
+        spawn(
+            downstream.command,
+            {
+                shell: true,
+                stdio: [
+                    "pipe",
+                    "pipe",
+                    "pipe"
+                ]
+            }
+        );
+ 
+    /*
+     * Forward stdout.
+     */
+ 
+    child.stdout.on(
         "data",
         chunk => {
-            input += chunk;
+            process.stdout.write(
+                chunk
+            );
         }
     );
  
-    process.stdin.on(
-        "end",
-        async () => {
-            let payload;
+    /*
+     * Forward stderr.
+     */
  
-            try {
-                payload =
-                    JSON.parse(input);
-            } catch {
-                process.exit(1);
-            }
+    child.stderr.on(
+        "data",
+        chunk => {
+            process.stderr.write(
+                chunk
+            );
+        }
+    );
  
-            /*
-             * Save cost.
-             */
+    /*
+     * Forward ORIGINAL JSON.
+     */
  
-            const sessionId =
-                payload.session_id;
+    child.stdin.write(
+        input
+    );
  
-            const totalCost =
-                payload.cost?.total_cost_usd;
+    child.stdin.end();
  
-            const sessionsDir =
-                path.join(
-                    APP_DIR,
-                    "sessions"
-                );
+    /*
+     * Finish with downstream.
+     */
  
-            fs.mkdirSync(
-                sessionsDir,
-                { recursive: true }
+    child.on(
+        "close",
+        code => {
+            process.exit(
+                code ?? 0
+            );
+        }
+    );
+ 
+    child.on(
+        "error",
+        error => {
+            console.error(
+                "Claude Cost Tracker downstream error:",
+                error.message
             );
  
-            if (
-                sessionId &&
-                typeof totalCost ===
-                    "number"
-            ) {
-                writeJson(
-                    path.join(
-                        sessionsDir,
-                        `${sessionId}.json`
-                    ),
-                    {
-                        session_id:
-                            sessionId,
+            process.exit(1);
+        }
+    );
+}
  
-                        total_cost_usd:
-                            totalCost,
  
-                        updated_at:
-                            new Date()
-                                .toISOString()
-                    }
-                );
-            }
+/*
+* ---------------------------------------------------------
+* STDIN
+* ---------------------------------------------------------
+*/
  
-            /*
-             * Load downstream.
-             */
+function readStdin() {
+    return new Promise(
+        (resolve, reject) => {
+            let data = "";
  
-            const config =
-                readJsonOrEmpty(
-                    CONFIG_PATH
-                );
- 
-            const downstream =
-                config.downstream;
- 
-            /*
-             * No downstream.
-             */
- 
-            if (
-                !downstream?.command
-            ) {
-                return;
-            }
- 
-            /*
-             * Run downstream command.
-             */
- 
-            const child = spawn(
-                downstream.command,
-                {
-                    shell: true,
-                    stdio: [
-                        "pipe",
-                        "pipe",
-                        "pipe"
-                    ]
-                }
+            process.stdin.setEncoding(
+                "utf8"
             );
  
-            child.stdout.on(
+            process.stdin.on(
                 "data",
                 chunk => {
-                    process.stdout.write(
-                        chunk
-                    );
+                    data += chunk;
                 }
             );
  
-            child.stderr.on(
-                "data",
-                chunk => {
-                    process.stderr.write(
-                        chunk
-                    );
-                }
+            process.stdin.on(
+                "end",
+                () => resolve(data)
             );
  
-            child.stdin.write(input);
-            child.stdin.end();
- 
-            child.on(
-                "close",
-                code => {
-                    process.exit(
-                        code ?? 0
-                    );
-                }
-            );
- 
-            child.on(
+            process.stdin.on(
                 "error",
-                error => {
-                    console.error(
-                        error.message
-                    );
- 
-                    process.exit(1);
-                }
+                reject
             );
         }
     );
 }
+ 
+ 
+/*
+* ---------------------------------------------------------
+* JSON helpers
+* ---------------------------------------------------------
+*/
  
 function readJsonOrEmpty(
     filePath
@@ -477,13 +678,16 @@ function readJsonOrEmpty(
     }
 }
  
+ 
 function writeJson(
     filePath,
     data
 ) {
     fs.mkdirSync(
         path.dirname(filePath),
-        { recursive: true }
+        {
+            recursive: true
+        }
     );
  
     fs.writeFileSync(
@@ -497,11 +701,20 @@ function writeJson(
     );
 }
  
-main().catch(error => {
-    console.error(
-        "Claude Cost Tracker:",
-        error.message
-    );
  
-    process.exit(1);
-});
+/*
+* ---------------------------------------------------------
+* Start
+* ---------------------------------------------------------
+*/
+ 
+main().catch(
+    error => {
+        console.error(
+            "Claude Cost Tracker:",
+            error.message
+        );
+ 
+        process.exit(1);
+    }
+);
