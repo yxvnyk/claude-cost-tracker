@@ -6,10 +6,10 @@ const path = require("path");
 const { spawn } = require("child_process");
  
 /*
-* ---------------------------------------------------------
-* Paths
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * Paths
+ * ---------------------------------------------------------
+ */
  
 const APP_DIR = path.join(
     os.homedir(),
@@ -51,12 +51,14 @@ const LOCAL_CONFIG_PATH = path.join(
     "cost-tracker.json"
 );
  
+const SESSIONS_DIR = path.join(
+    APP_DIR,
+    "sessions"
+);
+ 
 /*
-* Absolute path to this script.
-*
-* Claude Code will use this path instead of relying
-* on PATH to find "claude-cost-tracker".
-*/
+ * Absolute path to this script.
+ */
  
 const SCRIPT_PATH = path.resolve(
     process.argv[1]
@@ -67,10 +69,10 @@ const PROXY_COMMAND =
  
  
 /*
-* ---------------------------------------------------------
-* Entry point
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * Entry point
+ * ---------------------------------------------------------
+ */
  
 async function main() {
     const command = process.argv[2];
@@ -88,6 +90,10 @@ async function main() {
             await proxy();
             break;
  
+        case "checkpoint":
+            await checkpoint();
+            break;
+ 
         default:
             printHelp();
             process.exit(1);
@@ -96,10 +102,10 @@ async function main() {
  
  
 /*
-* ---------------------------------------------------------
-* Help
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * Help
+ * ---------------------------------------------------------
+ */
  
 function printHelp() {
     console.log(`
@@ -120,16 +126,22 @@ Usage:
       Uninstall from current project
  
   claude-cost-tracker proxy
-      Run status line middleware
+      Run Status Line middleware
+ 
+  claude-cost-tracker checkpoint <stage>
+      Save current session cost for a stage
+ 
+  claude-cost-tracker checkpoint <stage> --session-id <id>
+      Save checkpoint for an explicitly specified session
 `);
 }
  
  
 /*
-* ---------------------------------------------------------
-* INSTALL
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * INSTALL
+ * ---------------------------------------------------------
+ */
  
 async function install() {
     const isLocal =
@@ -262,10 +274,10 @@ async function install() {
  
  
 /*
-* ---------------------------------------------------------
-* UNINSTALL
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * UNINSTALL
+ * ---------------------------------------------------------
+ */
  
 async function uninstall() {
     const isLocal =
@@ -329,10 +341,6 @@ async function uninstall() {
             settings
         );
  
-        /*
-         * Remove local tracker config.
-         */
- 
         if (
             fs.existsSync(
                 LOCAL_CONFIG_PATH
@@ -388,12 +396,274 @@ async function uninstall() {
  
  
 /*
-* ---------------------------------------------------------
-* PROXY
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * CHECKPOINT
+ * ---------------------------------------------------------
+ */
+ 
+async function checkpoint() {
+    const stage =
+        process.argv[3];
+ 
+    if (!stage) {
+        console.error(
+            "Usage: claude-cost-tracker checkpoint <stage> [--session-id <id>]"
+        );
+ 
+        process.exit(1);
+    }
+ 
+    /*
+     * -----------------------------------------------------
+     * Determine session ID
+     * -----------------------------------------------------
+     *
+     * Priority:
+     *
+     * 1. Explicit --session-id
+     * 2. CLAUDE_CODE_SESSION_ID
+     *
+     * No "latest session" fallback.
+     */
+ 
+    let sessionId = null;
+ 
+    const sessionIdFlagIndex =
+        process.argv.indexOf("--session-id");
+ 
+    if (sessionIdFlagIndex !== -1) {
+        sessionId =
+            process.argv[
+                sessionIdFlagIndex + 1
+            ];
+ 
+        if (!sessionId) {
+            console.error(
+                "Missing value for --session-id."
+            );
+ 
+            process.exit(1);
+        }
+    }
+ 
+    if (!sessionId) {
+        sessionId =
+            process.env.CLAUDE_CODE_SESSION_ID;
+    }
+ 
+    if (!sessionId) {
+        console.error(
+            "Claude Code session ID is not available."
+        );
+ 
+        console.error(
+            "Run this command from Claude Code or provide --session-id."
+        );
+ 
+        process.exit(1);
+    }
+ 
+    /*
+     * -----------------------------------------------------
+     * Find exact session file
+     * -----------------------------------------------------
+     */
+ 
+    const sessionFile =
+        path.join(
+            SESSIONS_DIR,
+            `${sessionId}.json`
+        );
+ 
+    if (!fs.existsSync(sessionFile)) {
+        console.error(
+            `Session file not found for session: ${sessionId}`
+        );
+ 
+        console.error(
+            `Expected file: ${sessionFile}`
+        );
+ 
+        process.exit(1);
+    }
+ 
+    /*
+     * -----------------------------------------------------
+     * Read session
+     * -----------------------------------------------------
+     */
+ 
+    const session =
+        readJsonOrEmpty(
+            sessionFile
+        );
+ 
+    /*
+     * -----------------------------------------------------
+     * Current session cost
+     * -----------------------------------------------------
+     */
+ 
+    const currentCost =
+        Number(
+            session.total_cost_usd
+        );
+ 
+    if (!Number.isFinite(currentCost)) {
+        console.error(
+            "Current session cost is unavailable."
+        );
+ 
+        process.exit(1);
+    }
+ 
+    /*
+     * -----------------------------------------------------
+     * Existing stages
+     * -----------------------------------------------------
+     */
+ 
+    if (!Array.isArray(session.stages)) {
+        session.stages = [];
+    }
+ 
+    /*
+     * -----------------------------------------------------
+     * Previous checkpoint
+     * -----------------------------------------------------
+     */
+ 
+    let previousCost = 0;
+ 
+    if (session.stages.length > 0) {
+        const lastStage =
+            session.stages[
+                session.stages.length - 1
+            ];
+ 
+        if (
+            Number.isFinite(
+                Number(
+                    lastStage.ended_cost_usd
+                )
+            )
+        ) {
+            previousCost =
+                Number(
+                    lastStage.ended_cost_usd
+                );
+        } else {
+            console.error(
+                "Previous checkpoint contains invalid cost data."
+            );
+ 
+            process.exit(1);
+        }
+    }
+ 
+    /*
+     * -----------------------------------------------------
+     * Calculate stage cost
+     * -----------------------------------------------------
+     */
+ 
+    const stageCost =
+        currentCost -
+        previousCost;
+ 
+    if (stageCost < 0) {
+        console.error(
+            "Current session cost is lower than previous checkpoint."
+        );
+ 
+        console.error(
+            `Previous: $${previousCost.toFixed(4)}`
+        );
+ 
+        console.error(
+            `Current:  $${currentCost.toFixed(4)}`
+        );
+ 
+        process.exit(1);
+    }
+ 
+    /*
+     * -----------------------------------------------------
+     * Add stage
+     * -----------------------------------------------------
+     */
+ 
+    session.stages.push({
+        name: stage,
+ 
+        started_cost_usd:
+            previousCost,
+ 
+        ended_cost_usd:
+            currentCost,
+ 
+        cost_usd:
+            stageCost,
+ 
+        timestamp:
+            new Date().toISOString()
+    });
+ 
+    /*
+     * -----------------------------------------------------
+     * Update session
+     * -----------------------------------------------------
+     */
+ 
+    session.updated_at =
+        new Date().toISOString();
+ 
+    /*
+     * -----------------------------------------------------
+     * Save
+     * -----------------------------------------------------
+     */
+ 
+    writeJson(
+        sessionFile,
+        session
+    );
+ 
+    /*
+     * -----------------------------------------------------
+     * Output
+     * -----------------------------------------------------
+     */
+ 
+    console.log(
+        `Stage "${stage}" recorded.`
+    );
+ 
+    console.log(
+        `Session: ${session.session_id}`
+    );
+ 
+    console.log(
+        `Stage cost: $${stageCost.toFixed(4)}`
+    );
+ 
+    console.log(
+        `Session total: $${currentCost.toFixed(4)}`
+    );
+}
+ 
+ 
+/*
+ * ---------------------------------------------------------
+ * PROXY
+ * ---------------------------------------------------------
+ */
  
 async function proxy() {
+    /*
+     * Read Status Line stdin.
+     */
+ 
     const input =
         await readStdin();
  
@@ -411,11 +681,7 @@ async function proxy() {
     }
  
     /*
-     * Determine whether this invocation
-     * belongs to a local installation.
-     *
-     * We check the current project's .claude
-     * settings first.
+     * Determine downstream Status Line.
      */
  
     const localSettings =
@@ -462,7 +728,7 @@ async function proxy() {
     }
  
     /*
-     * Save cost.
+     * Extract session information.
      */
  
     const sessionId =
@@ -471,32 +737,8 @@ async function proxy() {
     const totalCost =
         payload.cost?.total_cost_usd;
  
-    const sessionsDir =
-        path.join(
-            APP_DIR,
-            "sessions"
-        );
- 
-    fs.mkdirSync(
-        sessionsDir,
-        { recursive: true }
-    );
- 
     /*
-     * Save complete input.
-     */
- 
-    fs.writeFileSync(
-        path.join(
-            APP_DIR,
-            "last-input.json"
-        ),
-        input,
-        "utf8"
-    );
- 
-    /*
-     * Save session cost.
+     * Save session state.
      */
  
     if (
@@ -504,22 +746,67 @@ async function proxy() {
         typeof totalCost ===
             "number"
     ) {
-        writeJson(
+        fs.mkdirSync(
+            SESSIONS_DIR,
+            { recursive: true }
+        );
+ 
+        const sessionFile =
             path.join(
-                sessionsDir,
+                SESSIONS_DIR,
                 `${sessionId}.json`
-            ),
-            {
-                session_id:
-                    sessionId,
+            );
  
-                total_cost_usd:
-                    totalCost,
+        /*
+         * Read existing session first.
+         * This preserves stages.
+         */
  
-                updated_at:
-                    new Date()
-                        .toISOString()
-            }
+        const existingSession =
+            readJsonOrEmpty(
+                sessionFile
+            );
+ 
+        const now =
+            new Date().toISOString();
+ 
+        const updatedSession = {
+            ...existingSession,
+ 
+            session_id:
+                sessionId,
+ 
+            model:
+                payload.model?.id ??
+                existingSession.model ??
+                null,
+ 
+            model_display_name:
+                payload.model?.display_name ??
+                existingSession.model_display_name ??
+                null,
+ 
+            created_at:
+                existingSession.created_at ??
+                now,
+ 
+            updated_at:
+                now,
+ 
+            total_cost_usd:
+                totalCost,
+ 
+            stages:
+                Array.isArray(
+                    existingSession.stages
+                )
+                    ? existingSession.stages
+                    : []
+        };
+ 
+        writeJson(
+            sessionFile,
+            updatedSession
         );
     }
  
@@ -534,7 +821,7 @@ async function proxy() {
     }
  
     /*
-     * Start downstream.
+     * Start downstream Status Line.
      */
  
     const child =
@@ -542,6 +829,7 @@ async function proxy() {
             downstream.command,
             {
                 shell: true,
+ 
                 stdio: [
                     "pipe",
                     "pipe",
@@ -614,10 +902,10 @@ async function proxy() {
  
  
 /*
-* ---------------------------------------------------------
-* STDIN
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * STDIN
+ * ---------------------------------------------------------
+ */
  
 function readStdin() {
     return new Promise(
@@ -650,16 +938,18 @@ function readStdin() {
  
  
 /*
-* ---------------------------------------------------------
-* JSON helpers
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * JSON helpers
+ * ---------------------------------------------------------
+ */
  
 function readJsonOrEmpty(
     filePath
 ) {
     if (
-        !fs.existsSync(filePath)
+        !fs.existsSync(
+            filePath
+        )
     ) {
         return {};
     }
@@ -703,10 +993,10 @@ function writeJson(
  
  
 /*
-* ---------------------------------------------------------
-* Start
-* ---------------------------------------------------------
-*/
+ * ---------------------------------------------------------
+ * Start
+ * ---------------------------------------------------------
+ */
  
 main().catch(
     error => {
@@ -718,3 +1008,4 @@ main().catch(
         process.exit(1);
     }
 );
+ 
