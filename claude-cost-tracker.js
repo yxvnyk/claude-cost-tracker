@@ -51,8 +51,20 @@ const LOCAL_CONFIG_PATH = path.join(
     "cost-tracker.json"
 );
  
+/*
+ * Project-local runtime data.
+ *
+ * Session history belongs to the current project,
+ * not to the global application directory.
+ */
+ 
+const PROJECT_TRACKER_DIR = path.join(
+    process.cwd(),
+    ".claude-cost-tracker"
+);
+ 
 const SESSIONS_DIR = path.join(
-    APP_DIR,
+    PROJECT_TRACKER_DIR,
     "sessions"
 );
  
@@ -66,7 +78,6 @@ const SCRIPT_PATH = path.resolve(
  
 const PROXY_COMMAND =
     `node "${SCRIPT_PATH}" proxy`;
- 
  
 /*
  * ---------------------------------------------------------
@@ -93,13 +104,16 @@ async function main() {
         case "checkpoint":
             await checkpoint();
             break;
+
+        case "status":
+            await status();
+            break;
  
         default:
             printHelp();
             process.exit(1);
     }
 }
- 
  
 /*
  * ---------------------------------------------------------
@@ -113,29 +127,31 @@ Claude Cost Tracker
  
 Usage:
  
-  claude-cost-tracker install
-      Install globally
+ claude-cost-tracker install
+     Install globally
  
-  claude-cost-tracker install --local
-      Install for current project
+ claude-cost-tracker install --local
+     Install for current project
  
-  claude-cost-tracker uninstall
-      Uninstall globally
+ claude-cost-tracker uninstall
+     Uninstall globally
  
-  claude-cost-tracker uninstall --local
-      Uninstall from current project
+ claude-cost-tracker uninstall --local
+     Uninstall from current project
  
-  claude-cost-tracker proxy
-      Run Status Line middleware
+ claude-cost-tracker proxy
+     Run Status Line middleware
  
-  claude-cost-tracker checkpoint <stage>
-      Save current session cost for a stage
+ claude-cost-tracker checkpoint <stage>
+     Save current session cost for a stage
  
-  claude-cost-tracker checkpoint <stage> --session-id <id>
-      Save checkpoint for an explicitly specified session
+ claude-cost-tracker checkpoint <stage> --session-id <id>
+     Save checkpoint for an explicitly specified session
+
+ claude-cost-tracker status
+     Show active Claude Code sessions info
 `);
 }
- 
  
 /*
  * ---------------------------------------------------------
@@ -272,7 +288,6 @@ async function install() {
     }
 }
  
- 
 /*
  * ---------------------------------------------------------
  * UNINSTALL
@@ -394,7 +409,6 @@ async function uninstall() {
     );
 }
  
- 
 /*
  * ---------------------------------------------------------
  * CHECKPOINT
@@ -465,7 +479,7 @@ async function checkpoint() {
  
     /*
      * -----------------------------------------------------
-     * Find exact session file
+     * Find exact project session file
      * -----------------------------------------------------
      */
  
@@ -563,6 +577,36 @@ async function checkpoint() {
  
     /*
      * -----------------------------------------------------
+    
+ 
+if (session.stages.length > 0) {
+        const lastStage =
+            session.stages[
+                session.stages.length - 1
+            ];
+ 
+        if (
+            Number.isFinite(
+                Number(
+                    lastStage.ended_cost_usd
+                )
+            )
+        ) {
+            previousCost =
+                Number(
+                    lastStage.ended_cost_usd
+                );
+        } else {
+            console.error(
+                "Previous checkpoint contains invalid cost data."
+            );
+ 
+            process.exit(1);
+        }
+    }
+ 
+    /*
+     * -----------------------------------------------------
      * Calculate stage cost
      * -----------------------------------------------------
      */
@@ -622,7 +666,7 @@ async function checkpoint() {
      * -----------------------------------------------------
      * Save
      * -----------------------------------------------------
-     */
+ */
  
     writeJson(
         sessionFile,
@@ -633,7 +677,7 @@ async function checkpoint() {
      * -----------------------------------------------------
      * Output
      * -----------------------------------------------------
-     */
+ */
  
     console.log(
         `Stage "${stage}" recorded.`
@@ -652,7 +696,278 @@ async function checkpoint() {
     );
 }
  
+/*
+* ---------------------------------------------------------
+* STATUS
+* ---------------------------------------------------------
+*/
  
+async function status() {
+    if (!fs.existsSync(SESSIONS_DIR)) {
+        console.log("No sessions found.");
+        return;
+    }
+ 
+    const files = fs.readdirSync(SESSIONS_DIR)
+        .filter(file => file.endsWith(".json"));
+ 
+    if (files.length === 0) {
+        console.log("No sessions found.");
+        return;
+    }
+ 
+    const sessions = [];
+ 
+    for (const file of files) {
+        const filePath = path.join(
+            SESSIONS_DIR,
+            file
+        );
+ 
+        try {
+            const session =
+                readJsonOrEmpty(filePath);
+ 
+            if (!session.session_id) {
+                continue;
+            }
+ 
+            sessions.push(session);
+        } catch {
+            // Ignore invalid session files.
+        }
+    }
+ 
+    if (sessions.length === 0) {
+        console.log("No valid sessions found.");
+        return;
+    }
+ 
+    /*
+     * Most recently updated session first.
+     */
+ 
+    sessions.sort((a, b) => {
+        const aTime =
+            Date.parse(a.updated_at ?? "") || 0;
+ 
+        const bTime =
+            Date.parse(b.updated_at ?? "") || 0;
+ 
+        return bTime - aTime;
+    });
+ 
+    /*
+     * One session — show it immediately.
+     */
+ 
+    if (sessions.length === 1) {
+        printSessionStatus(sessions[0]);
+        return;
+    }
+ 
+    /*
+     * Multiple sessions — let user choose.
+     */
+ 
+    console.log(
+        "\nClaude Cost Tracker — Sessions\n"
+    );
+ 
+    sessions.forEach((session, index) => {
+        const model =
+            session.model_display_name ??
+            session.model ??
+            "Unknown model";
+ 
+        const total =
+            Number(session.total_cost_usd);
+ 
+        const totalText =
+            Number.isFinite(total)
+                ? `$${total.toFixed(4)}`
+                : "Unknown";
+ 
+        console.log(
+            `${index + 1}. ${session.session_id}`
+        );
+ 
+        console.log(
+            `   ${model} — ${totalText}`
+        );
+ 
+        console.log();
+    });
+ 
+    const selected =
+        await selectSession(sessions);
+ 
+    if (!selected) {
+        console.log("Cancelled.");
+        return;
+    }
+ 
+    console.log();
+ 
+    printSessionStatus(selected);
+}
+ 
+/*
+* ---------------------------------------------------------
+* SESSION SELECTION
+* ---------------------------------------------------------
+*/
+ 
+async function selectSession(sessions) {
+    const readline =
+        require("readline");
+ 
+    const rl =
+        readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+ 
+    const ask = () =>
+        new Promise(resolve => {
+            rl.question(
+                `Select session [1-${sessions.length}] (0 to exit): `,
+                resolve
+            );
+        });
+ 
+    try {
+        while (true) {
+            let answer;
+ 
+            try {
+                answer =
+                    (await ask()).trim();
+            } catch {
+                return null;
+            }
+ 
+            /*
+             * Ctrl+D / EOF.
+             */
+ 
+            if (answer === "") {
+                console.log(
+                    "Please enter a session number."
+                );
+ 
+                continue;
+            }
+ 
+            /*
+             * Exit.
+             */
+ 
+            if (answer === "0") {
+                return null;
+            }
+ 
+            /*
+             * Only digits are accepted.
+             */
+ 
+            if (!/^\d+$/.test(answer)) {
+                console.log(
+                    `Please enter a number from 1 to ${sessions.length}.`
+                );
+ 
+                continue;
+            }
+ 
+            const number =
+                Number(answer);
+ 
+            /*
+             * Prevent invalid or unsafe numbers.
+             */
+ 
+            if (
+                !Number.isSafeInteger(number) ||
+                number < 1 ||
+                number > sessions.length
+            ) {
+                console.log(
+                    `Invalid selection. Please choose 1 to ${sessions.length}.`
+                );
+ 
+                continue;
+            }
+ 
+            return sessions[number - 1];
+        }
+    } finally {
+        rl.close();
+    }
+}
+ 
+/*
+* ---------------------------------------------------------
+* PRINT SESSION STATUS
+* ---------------------------------------------------------
+*/
+ 
+function printSessionStatus(session) {
+    const model =
+        session.model_display_name ??
+        session.model ??
+        "Unknown model";
+ 
+    const total =
+        Number(session.total_cost_usd);
+ 
+    console.log(
+        `Session: ${session.session_id}`
+    );
+ 
+    console.log(
+        `Model: ${model}`
+    );
+ 
+    console.log();
+ 
+    console.log(
+        `Total: ${
+            Number.isFinite(total)
+                ? `$${total.toFixed(4)}`
+                : "Unknown"
+        }`
+    );
+ 
+    console.log();
+ 
+    console.log("Stages:");
+ 
+    if (
+        !Array.isArray(session.stages) ||
+        session.stages.length === 0
+    ) {
+        console.log(
+            "  No checkpoints recorded."
+        );
+ 
+        return;
+    }
+ 
+    for (const stage of session.stages) {
+        const cost =
+            Number(stage.cost_usd);
+ 
+        const costText =
+            Number.isFinite(cost)
+                ? `$${cost.toFixed(4)}`
+                : "Unknown";
+ 
+        console.log(
+            `  ${stage.name}    ${costText}`
+        );
+    }
+}
+
 /*
  * ---------------------------------------------------------
  * PROXY
@@ -738,7 +1053,7 @@ async function proxy() {
         payload.cost?.total_cost_usd;
  
     /*
-     * Save session state.
+     * Save session state to the current project.
      */
  
     if (
@@ -900,7 +1215,6 @@ async function proxy() {
     );
 }
  
- 
 /*
  * ---------------------------------------------------------
  * STDIN
@@ -936,7 +1250,6 @@ function readStdin() {
     );
 }
  
- 
 /*
  * ---------------------------------------------------------
  * JSON helpers
@@ -968,7 +1281,6 @@ function readJsonOrEmpty(
     }
 }
  
- 
 function writeJson(
     filePath,
     data
@@ -990,7 +1302,6 @@ function writeJson(
         "utf8"
     );
 }
- 
  
 /*
  * ---------------------------------------------------------

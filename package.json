@@ -1,6 +1,6 @@
 {
     "name": "claude-cost-tracker",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Middleware for Claude Code Status Line with cost tracking",
     "main": "claude-cost-tracker.js",
     "bin": {
