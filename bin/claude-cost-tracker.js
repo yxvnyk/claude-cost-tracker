@@ -1,73 +1,25 @@
 #!/usr/bin/env node
- 
-const fs = require("fs");
+
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
- 
-/*
- * ---------------------------------------------------------
- * Paths
- * ---------------------------------------------------------
- */
- 
-const APP_DIR = path.join(
-    os.homedir(),
-    ".claude-cost-tracker"
-);
- 
-const GLOBAL_CLAUDE_DIR = path.join(
-    os.homedir(),
-    ".claude"
-);
- 
-const GLOBAL_SETTINGS_PATH = path.join(
-    GLOBAL_CLAUDE_DIR,
-    "settings.json"
-);
- 
-const LOCAL_CLAUDE_DIR = path.join(
-    process.cwd(),
-    ".claude"
-);
- 
-const LOCAL_SETTINGS_PATH = path.join(
-    LOCAL_CLAUDE_DIR,
-    "settings.json"
-);
- 
-const GLOBAL_CONFIG_PATH = path.join(
-    APP_DIR,
-    "config.json"
-);
- 
-const GLOBAL_BACKUP_PATH = path.join(
-    APP_DIR,
-    "original-statusline.json"
-);
- 
-const LOCAL_CONFIG_PATH = path.join(
-    LOCAL_CLAUDE_DIR,
-    "cost-tracker.json"
-);
- 
-/*
- * Project-local runtime data.
- *
- * Session history belongs to the current project,
- * not to the global application directory.
- */
- 
-const PROJECT_TRACKER_DIR = path.join(
-    process.cwd(),
-    ".claude-cost-tracker"
-);
- 
-const SESSIONS_DIR = path.join(
-    PROJECT_TRACKER_DIR,
-    "sessions"
-);
- 
+const {
+    readSession,
+    writeSession,
+} = require("../src/session/session-store");
+const {
+    recordCheckpoint
+} = require("../src/session/session-service");
+const {
+    getStatusSessions
+} = require("../src/status/status-service");
+const {
+    install: installClaudeCode,
+    uninstall: uninstallClaudeCode,
+    getDownstreamStatusLine
+} = require("../src/integration/claude-code-config");
+
+
 /*
  * Absolute path to this script.
  */
@@ -163,29 +115,13 @@ async function install() {
     const isLocal =
         process.argv.includes("--local");
  
-    const settingsPath = isLocal
-        ? LOCAL_SETTINGS_PATH
-        : GLOBAL_SETTINGS_PATH;
+    const result =
+        installClaudeCode(
+            isLocal,
+            PROXY_COMMAND
+        );
  
-    const settingsDir =
-        path.dirname(settingsPath);
- 
-    fs.mkdirSync(
-        settingsDir,
-        { recursive: true }
-    );
- 
-    const settings =
-        readJsonOrEmpty(settingsPath);
- 
-    /*
-     * Already installed?
-     */
- 
-    if (
-        settings.statusLine?.command ===
-        PROXY_COMMAND
-    ) {
+    if (result.alreadyInstalled) {
         console.log(
             `Claude Cost Tracker is already installed ${
                 isLocal ? "locally" : "globally"
@@ -195,90 +131,16 @@ async function install() {
         return;
     }
  
-    /*
-     * Save existing Status Line.
-     */
- 
-    const existingStatusLine =
-        settings.statusLine ?? null;
- 
-    /*
-     * LOCAL INSTALL
-     */
- 
-    if (isLocal) {
-        const localConfig = {
-            installed: true,
-            originalStatusLine:
-                existingStatusLine
-        };
- 
-        writeJson(
-            LOCAL_CONFIG_PATH,
-            localConfig
-        );
-    }
- 
-    /*
-     * GLOBAL INSTALL
-     */
- 
-    else {
-        fs.mkdirSync(
-            APP_DIR,
-            { recursive: true }
-        );
- 
-        writeJson(
-            GLOBAL_BACKUP_PATH,
-            {
-                statusLine:
-                    existingStatusLine
-            }
-        );
- 
-        writeJson(
-            GLOBAL_CONFIG_PATH,
-            {
-                downstream:
-                    existingStatusLine
-                        ? {
-                            type:
-                                existingStatusLine.type ??
-                                "command",
- 
-                            command:
-                                existingStatusLine.command
-                        }
-                        : null
-            }
-        );
-    }
- 
-    /*
-     * Replace Status Line with our proxy.
-     */
- 
-    settings.statusLine = {
-        type: "command",
-        command: PROXY_COMMAND
-    };
- 
-    writeJson(
-        settingsPath,
-        settings
-    );
- 
     console.log(
         `Claude Cost Tracker installed ${
             isLocal ? "locally" : "globally"
         }.`
     );
  
-    if (existingStatusLine) {
+    if (result.previousStatusLine) {
         console.log(
             `Previous Status Line: ${
-                existingStatusLine.command
+                result.previousStatusLine.command
             }`
         );
     } else {
@@ -298,13 +160,13 @@ async function uninstall() {
     const isLocal =
         process.argv.includes("--local");
  
-    const settingsPath = isLocal
-        ? LOCAL_SETTINGS_PATH
-        : GLOBAL_SETTINGS_PATH;
+    const result =
+        uninstallClaudeCode(
+            isLocal,
+            PROXY_COMMAND
+        );
  
-    if (
-        !fs.existsSync(settingsPath)
-    ) {
+    if (result.reason === "settings-not-found") {
         console.log(
             "Settings file does not exist."
         );
@@ -312,17 +174,7 @@ async function uninstall() {
         return;
     }
  
-    const settings =
-        readJsonOrEmpty(settingsPath);
- 
-    /*
-     * Make sure we're uninstalling OUR proxy.
-     */
- 
-    if (
-        settings.statusLine?.command !==
-        PROXY_COMMAND
-    ) {
+    if (result.reason === "not-installed") {
         console.log(
             `Claude Cost Tracker is not installed ${
                 isLocal ? "locally" : "globally"
@@ -332,80 +184,12 @@ async function uninstall() {
         return;
     }
  
-    /*
-     * LOCAL
-     */
- 
-    if (isLocal) {
-        const config =
-            readJsonOrEmpty(
-                LOCAL_CONFIG_PATH
-            );
- 
-        if (
-            config.originalStatusLine
-        ) {
-            settings.statusLine =
-                config.originalStatusLine;
-        } else {
-            delete settings.statusLine;
-        }
- 
-        writeJson(
-            settingsPath,
-            settings
-        );
- 
-        if (
-            fs.existsSync(
-                LOCAL_CONFIG_PATH
-            )
-        ) {
-            fs.unlinkSync(
-                LOCAL_CONFIG_PATH
-            );
-        }
- 
-        console.log(
-            "Claude Cost Tracker local installation removed."
-        );
- 
-        return;
-    }
- 
-    /*
-     * GLOBAL
-     */
- 
-    if (
-        fs.existsSync(
-            GLOBAL_BACKUP_PATH
-        )
-    ) {
-        const backup =
-            readJsonOrEmpty(
-                GLOBAL_BACKUP_PATH
-            );
- 
-        if (
-            backup.statusLine
-        ) {
-            settings.statusLine =
-                backup.statusLine;
-        } else {
-            delete settings.statusLine;
-        }
-    } else {
-        delete settings.statusLine;
-    }
- 
-    writeJson(
-        settingsPath,
-        settings
-    );
- 
     console.log(
-        "Claude Cost Tracker global installation removed."
+        `Claude Cost Tracker ${
+            isLocal
+                ? "local"
+                : "global"
+        } installation removed.`
     );
 }
  
@@ -483,217 +267,35 @@ async function checkpoint() {
      * -----------------------------------------------------
      */
  
-    const sessionFile =
-        path.join(
-            SESSIONS_DIR,
-            `${sessionId}.json`
+    try {
+    const result =
+        recordCheckpoint(
+        sessionId,
+        stage
         );
  
-    if (!fs.existsSync(sessionFile)) {
-        console.error(
-            `Session file not found for session: ${sessionId}`
-        );
- 
-        console.error(
-            `Expected file: ${sessionFile}`
-        );
- 
-        process.exit(1);
-    }
- 
-    /*
-     * -----------------------------------------------------
-     * Read session
-     * -----------------------------------------------------
-     */
- 
-    const session =
-        readJsonOrEmpty(
-            sessionFile
-        );
- 
-    /*
-     * -----------------------------------------------------
-     * Current session cost
-     * -----------------------------------------------------
-     */
- 
-    const currentCost =
-        Number(
-            session.total_cost_usd
-        );
- 
-    if (!Number.isFinite(currentCost)) {
-        console.error(
-            "Current session cost is unavailable."
-        );
- 
-        process.exit(1);
-    }
- 
-    /*
-     * -----------------------------------------------------
-     * Existing stages
-     * -----------------------------------------------------
-     */
- 
-    if (!Array.isArray(session.stages)) {
-        session.stages = [];
-    }
- 
-    /*
-     * -----------------------------------------------------
-     * Previous checkpoint
-     * -----------------------------------------------------
-     */
- 
-    let previousCost = 0;
- 
-    if (session.stages.length > 0) {
-        const lastStage =
-            session.stages[
-                session.stages.length - 1
-            ];
- 
-        if (
-            Number.isFinite(
-                Number(
-                    lastStage.ended_cost_usd
-                )
-            )
-        ) {
-            previousCost =
-                Number(
-                    lastStage.ended_cost_usd
-                );
-        } else {
-            console.error(
-                "Previous checkpoint contains invalid cost data."
-            );
- 
-            process.exit(1);
-        }
-    }
- 
-    /*
-     * -----------------------------------------------------
-    
- 
-if (session.stages.length > 0) {
-        const lastStage =
-            session.stages[
-                session.stages.length - 1
-            ];
- 
-        if (
-            Number.isFinite(
-                Number(
-                    lastStage.ended_cost_usd
-                )
-            )
-        ) {
-            previousCost =
-                Number(
-                    lastStage.ended_cost_usd
-                );
-        } else {
-            console.error(
-                "Previous checkpoint contains invalid cost data."
-            );
- 
-            process.exit(1);
-        }
-    }
- 
-    /*
-     * -----------------------------------------------------
-     * Calculate stage cost
-     * -----------------------------------------------------
-     */
- 
-    const stageCost =
-        currentCost -
-        previousCost;
- 
-    if (stageCost < 0) {
-        console.error(
-            "Current session cost is lower than previous checkpoint."
-        );
- 
-        console.error(
-            `Previous: $${previousCost.toFixed(4)}`
-        );
- 
-        console.error(
-            `Current:  $${currentCost.toFixed(4)}`
-        );
- 
-        process.exit(1);
-    }
- 
-    /*
-     * -----------------------------------------------------
-     * Add stage
-     * -----------------------------------------------------
-     */
- 
-    session.stages.push({
-        name: stage,
- 
-        started_cost_usd:
-            previousCost,
- 
-        ended_cost_usd:
-            currentCost,
- 
-        cost_usd:
-            stageCost,
- 
-        timestamp:
-            new Date().toISOString()
-    });
- 
-    /*
-     * -----------------------------------------------------
-     * Update session
-     * -----------------------------------------------------
-     */
- 
-    session.updated_at =
-        new Date().toISOString();
- 
-    /*
-     * -----------------------------------------------------
-     * Save
-     * -----------------------------------------------------
- */
- 
-    writeJson(
-        sessionFile,
-        session
+      console.log(
+        `Stage "${result.stage}" recorded.`
     );
  
-    /*
-     * -----------------------------------------------------
-     * Output
-     * -----------------------------------------------------
- */
- 
-    console.log(
-        `Stage "${stage}" recorded.`
+      console.log(
+        `Session: ${result.sessionId}`
     );
  
     console.log(
-        `Session: ${session.session_id}`
+        `Stage cost: $${result.stageCost.toFixed(4)}`
     );
  
     console.log(
-        `Stage cost: $${stageCost.toFixed(4)}`
+        `Session total: $${result.totalCost.toFixed(4)}`
+    );
+    } catch (error) {
+    console.error(
+        error.message
     );
  
-    console.log(
-        `Session total: $${currentCost.toFixed(4)}`
-    );
+    process.exit(1);
+    }
 }
  
 /*
@@ -703,59 +305,13 @@ if (session.stages.length > 0) {
 */
  
 async function status() {
-    if (!fs.existsSync(SESSIONS_DIR)) {
-        console.log("No sessions found.");
-        return;
-    }
- 
-    const files = fs.readdirSync(SESSIONS_DIR)
-        .filter(file => file.endsWith(".json"));
- 
-    if (files.length === 0) {
-        console.log("No sessions found.");
-        return;
-    }
- 
-    const sessions = [];
- 
-    for (const file of files) {
-        const filePath = path.join(
-            SESSIONS_DIR,
-            file
-        );
- 
-        try {
-            const session =
-                readJsonOrEmpty(filePath);
- 
-            if (!session.session_id) {
-                continue;
-            }
- 
-            sessions.push(session);
-        } catch {
-            // Ignore invalid session files.
-        }
-    }
+    const sessions =
+        getStatusSessions();
  
     if (sessions.length === 0) {
-        console.log("No valid sessions found.");
+        console.log("No sessions found.");
         return;
     }
- 
-    /*
-     * Most recently updated session first.
-     */
- 
-    sessions.sort((a, b) => {
-        const aTime =
-            Date.parse(a.updated_at ?? "") || 0;
- 
-        const bTime =
-            Date.parse(b.updated_at ?? "") || 0;
- 
-        return bTime - aTime;
-    });
  
     /*
      * One session — show it immediately.
@@ -994,53 +550,11 @@ async function proxy() {
  
         process.exit(1);
     }
- 
-    /*
-     * Determine downstream Status Line.
-     */
- 
-    const localSettings =
-        readJsonOrEmpty(
-            LOCAL_SETTINGS_PATH
-        );
- 
-    const globalSettings =
-        readJsonOrEmpty(
-            GLOBAL_SETTINGS_PATH
-        );
- 
-    let downstream = null;
- 
-    /*
-     * Local Status Line has priority.
-     */
- 
-    if (
-        localSettings.statusLine?.command ===
-        PROXY_COMMAND
-    ) {
-        const localConfig =
-            readJsonOrEmpty(
-                LOCAL_CONFIG_PATH
-            );
- 
-        downstream =
-            localConfig.originalStatusLine;
-    }
- 
-    /*
-     * Otherwise use global configuration.
-     */
- 
-    else {
-        const globalConfig =
-            readJsonOrEmpty(
-                GLOBAL_CONFIG_PATH
-            );
- 
-        downstream =
-            globalConfig.downstream;
-    }
+
+    const downstream = 
+        getDownstreamStatusLine(
+            PROXY_COMMAND
+        )
  
     /*
      * Extract session information.
@@ -1061,26 +575,8 @@ async function proxy() {
         typeof totalCost ===
             "number"
     ) {
-        fs.mkdirSync(
-            SESSIONS_DIR,
-            { recursive: true }
-        );
- 
-        const sessionFile =
-            path.join(
-                SESSIONS_DIR,
-                `${sessionId}.json`
-            );
- 
-        /*
-         * Read existing session first.
-         * This preserves stages.
-         */
- 
         const existingSession =
-            readJsonOrEmpty(
-                sessionFile
-            );
+            readSession(sessionId) ?? {};
  
         const now =
             new Date().toISOString();
@@ -1119,8 +615,8 @@ async function proxy() {
                     : []
         };
  
-        writeJson(
-            sessionFile,
+        writeSession(
+            sessionId,
             updatedSession
         );
     }
@@ -1247,59 +743,6 @@ function readStdin() {
                 reject
             );
         }
-    );
-}
- 
-/*
- * ---------------------------------------------------------
- * JSON helpers
- * ---------------------------------------------------------
- */
- 
-function readJsonOrEmpty(
-    filePath
-) {
-    if (
-        !fs.existsSync(
-            filePath
-        )
-    ) {
-        return {};
-    }
- 
-    try {
-        return JSON.parse(
-            fs.readFileSync(
-                filePath,
-                "utf8"
-            )
-        );
-    } catch {
-        throw new Error(
-            `Cannot parse JSON: ${filePath}`
-        );
-    }
-}
- 
-function writeJson(
-    filePath,
-    data
-) {
-    fs.mkdirSync(
-        path.dirname(filePath),
-        {
-            recursive: true
-        }
-    );
- 
-    fs.writeFileSync(
-        filePath,
-        JSON.stringify(
-            data,
-            null,
-            2
-        ),
-        "utf8"
     );
 }
  
