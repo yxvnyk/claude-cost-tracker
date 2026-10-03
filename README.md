@@ -230,7 +230,7 @@ npm install -g claude-cost-tracker
 Then:
 
 ```bash
-claude-cost-tracker install
+claude-cost-tracker setup
 ```
 
 The global installation modifies:
@@ -254,7 +254,7 @@ Tracker configuration is stored separately:
 To install the tracker for the current project:
 
 ```bash
-claude-cost-tracker install --local
+claude-cost-tracker setup --local
 ```
 
 Claude Code configuration:
@@ -282,7 +282,7 @@ The tracker keeps its project-specific state outside of `.claude`.
 | Claude Code settings | `~/.claude/settings.json` | `<project>/.claude/settings.json` |
 | Tracker directory    | `~/.claude-cost-tracker/` | `<project>/.claude-cost-tracker/` |
 | Scope                | All projects              | Current project                   |
-| Installation         | `install`                 | `install --local`                 |
+| Installation         | `setup`                   | `setup --local`                   |
 | Uninstallation       | `uninstall`               | `uninstall --local`               |
 
 Local installation is useful when a framework or project needs its Claude Code integration to be isolated from the user's global environment.
@@ -810,13 +810,13 @@ Sessions are sorted by their last update time.
 Install globally:
 
 ```bash
-claude-cost-tracker install
+claude-cost-tracker setup
 ```
 
 Install for the current project:
 
 ```bash
-claude-cost-tracker install --local
+claude-cost-tracker setup --local
 ```
 
 ---

@@ -6,6 +6,10 @@
     "bin": {
         "claude-cost-tracker": "bin/claude-cost-tracker.js"
     },
+    "files": [
+        "bin",
+        "src"
+    ],
     "engines": {
         "node": ">=18"
     },

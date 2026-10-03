@@ -41,8 +41,8 @@ async function main() {
     const command = process.argv[2];
  
     switch (command) {
-        case "install":
-            await install();
+        case "setup":
+            await setup();
             break;
  
         case "uninstall":
@@ -79,10 +79,10 @@ Claude Cost Tracker
  
 Usage:
  
- claude-cost-tracker install
+ claude-cost-tracker setup
      Install globally
  
- claude-cost-tracker install --local
+ claude-cost-tracker setup --local
      Install for current project
  
  claude-cost-tracker uninstall
@@ -107,11 +107,11 @@ Usage:
  
 /*
  * ---------------------------------------------------------
- * INSTALL
+ * SETUP
  * ---------------------------------------------------------
  */
  
-async function install() {
+async function setup() {
     const isLocal =
         process.argv.includes("--local");
  
@@ -762,4 +762,3 @@ main().catch(
         process.exit(1);
     }
 );
- 
