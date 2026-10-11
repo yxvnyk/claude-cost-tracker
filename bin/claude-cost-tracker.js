@@ -14,6 +14,12 @@ const {
     getStatusSessions
 } = require("../src/status/status-service");
 const {
+    getStageCostAfter,
+    getStageCostBefore,
+    getStageTimestampAfter,
+    getStageTimestampBefore
+} = require("../src/session/stage-record");
+const {
     install: installClaudeCode,
     uninstall: uninstallClaudeCode,
     getDownstreamStatusLine
@@ -520,6 +526,58 @@ function printSessionStatus(session) {
  
         console.log(
             `  ${stage.name}    ${costText}`
+        );
+
+        const stageModel =
+            typeof stage.model === "string" &&
+            stage.model.trim() !== ""
+                ? stage.model
+                : "undefined";
+
+        const stageTime =
+            typeof stage.time === "string" &&
+            stage.time.trim() !== ""
+                ? stage.time
+                : "Unknown";
+
+        console.log(
+            `    model: ${stageModel} | elapsed: ${stageTime}`
+        );
+
+        const costBefore =
+            getStageCostBefore(stage);
+
+        const costAfter =
+            getStageCostAfter(stage);
+
+        const costBeforeText =
+            Number.isFinite(costBefore)
+                ? `$${costBefore.toFixed(4)}`
+                : "Unknown";
+
+        const costAfterText =
+            Number.isFinite(costAfter)
+                ? `$${costAfter.toFixed(4)}`
+                : "Unknown";
+
+        console.log(
+            `    cost: ${costBeforeText} -> ${costAfterText}`
+        );
+
+        const timestampBefore =
+            getStageTimestampBefore(stage) ??
+            "Unknown";
+
+        const timestampAfter =
+            getStageTimestampAfter(stage) ??
+            "Unknown";
+
+        console.log(
+            `    from: ${timestampBefore}`
+        );
+
+        console.log(
+            `    to:   ${timestampAfter}`
         );
     }
 }

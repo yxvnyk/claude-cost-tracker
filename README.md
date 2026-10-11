@@ -530,7 +530,7 @@ Skill
         └── checkpoint testing
 ```
 
-Each checkpoint marks the current cumulative session cost. Claude Cost Tracker then calculates how much the current stage has consumed since the previous checkpoint.
+Each checkpoint marks the current cumulative session cost. Claude Cost Tracker then calculates how much the current stage has consumed since the previous checkpoint and records the model, cost boundaries, UTC time window, and elapsed duration for that stage. For the first recorded stage, the start boundary is unknown until the tracker has a prior checkpoint to anchor from.
 
 ---
 
@@ -686,21 +686,33 @@ The resulting session contains the individual stage costs:
   "stages": [
     {
       "name": "analysis",
-      "started_cost_usd": 0,
-      "ended_cost_usd": 0.30,
-      "cost_usd": 0.30
+      "model": "claude-sonnet-5",
+      "cost_before": 0,
+      "cost_after": 0.30,
+      "cost_usd": 0.30,
+      "timestamp_before": null,
+      "timestamp_after": "2026-08-31T10:05:00.000Z",
+      "time": null
     },
     {
       "name": "implementation",
-      "started_cost_usd": 0.30,
-      "ended_cost_usd": 0.75,
-      "cost_usd": 0.45
+      "model": "claude-sonnet-5",
+      "cost_before": 0.30,
+      "cost_after": 0.75,
+      "cost_usd": 0.45,
+      "timestamp_before": "2026-08-31T10:05:00.000Z",
+      "timestamp_after": "2026-08-31T10:20:00.000Z",
+      "time": "00:15:00"
     },
     {
       "name": "testing",
-      "started_cost_usd": 0.75,
-      "ended_cost_usd": 1.00,
-      "cost_usd": 0.25
+      "model": "claude-sonnet-5",
+      "cost_before": 0.75,
+      "cost_after": 1.00,
+      "cost_usd": 0.25,
+      "timestamp_before": "2026-08-31T10:20:00.000Z",
+      "timestamp_after": "2026-08-31T10:30:00.000Z",
+      "time": "00:10:00"
     }
   ]
 }
@@ -794,10 +806,24 @@ Model: Claude Sonnet
 Total: $0.8234
 
 Stages:
- planning $0.20
- implementation $0.45
- testing $0.17
+  planning    $0.2000
+    model: claude-sonnet-5 | elapsed: Unknown
+    cost: $0.0000 -> $0.2000
+    from: Unknown
+    to:   2026-08-31T10:05:00.000Z
+  implementation    $0.4500
+    model: claude-sonnet-5 | elapsed: 00:15:00
+    cost: $0.2000 -> $0.6500
+    from: 2026-08-31T10:05:00.000Z
+    to:   2026-08-31T10:20:00.000Z
+  testing    $0.1700
+    model: claude-sonnet-5 | elapsed: 00:10:00
+    cost: $0.6500 -> $0.8200
+    from: 2026-08-31T10:20:00.000Z
+    to:   2026-08-31T10:30:00.000Z
 ```
+
+The first recorded stage shows `Unknown` for its start time and elapsed duration because the tracker has no earlier checkpoint proving when that stage actually began.
 
 Sessions are sorted by their last update time.
 

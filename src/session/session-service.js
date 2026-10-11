@@ -2,7 +2,13 @@ const {
   readSession,
   writeSession
 } = require("./session-store");
- 
+const {
+  formatElapsedTime,
+  getStageCostAfter,
+  getStageModel,
+  resolveStageStartTimestamp
+} = require("./stage-record");
+
 function recordCheckpoint(sessionId, stage) {
   const session =
     readSession(sessionId);
@@ -25,18 +31,19 @@ function recordCheckpoint(sessionId, stage) {
   if (!Array.isArray(session.stages)) {
     session.stages = [];
   }
- 
+
   let previousCost = 0;
+  let previousStage = null;
  
   if (session.stages.length > 0) {
-    const lastStage =
+    previousStage =
       session.stages[
         session.stages.length - 1
       ];
  
     if (
       !Number.isFinite(
-        Number(lastStage.ended_cost_usd)
+        getStageCostAfter(previousStage)
       )
     ) {
       throw new Error(
@@ -45,7 +52,7 @@ function recordCheckpoint(sessionId, stage) {
     }
  
     previousCost =
-      Number(lastStage.ended_cost_usd);
+      getStageCostAfter(previousStage);
   }
  
   const stageCost =
@@ -61,21 +68,38 @@ function recordCheckpoint(sessionId, stage) {
  
   const now =
     new Date().toISOString();
+
+  const timestampBefore =
+    resolveStageStartTimestamp(
+      previousStage
+    );
  
   session.stages.push({
     name: stage,
+
+    model:
+      getStageModel(session),
  
-    started_cost_usd:
+    cost_before:
       previousCost,
  
-    ended_cost_usd:
+    cost_after:
       currentCost,
  
     cost_usd:
       stageCost,
  
-    timestamp:
-      now
+    timestamp_before:
+      timestampBefore,
+
+    timestamp_after:
+      now,
+
+    time:
+      formatElapsedTime(
+        timestampBefore,
+        now
+      )
   });
  
   session.updated_at =

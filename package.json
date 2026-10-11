@@ -15,6 +15,7 @@
     },
     "license": "MIT",
     "scripts": {
-        "start": "node claude-cost-tracker.js"
+        "start": "node claude-cost-tracker.js",
+        "test": "node --test"
     }
 }
