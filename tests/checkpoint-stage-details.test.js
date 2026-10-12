@@ -171,6 +171,73 @@ function runStatusCli({
   );
 }
 
+function runProxyCli({
+  home,
+  project,
+  payload
+}) {
+  return spawnSync(
+    process.execPath,
+    [CLI_PATH, "proxy"],
+    {
+      cwd: project,
+      input: JSON.stringify(payload),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home
+      }
+    }
+  );
+}
+
+function writeRawSessionFile(
+  project,
+  sessionId,
+  session
+) {
+  const sessionsDir = path.join(
+    project,
+    ".claude-cost-tracker",
+    "sessions"
+  );
+
+  fs.mkdirSync(sessionsDir, {
+    recursive: true
+  });
+
+  fs.writeFileSync(
+    path.join(
+      sessionsDir,
+      `${sessionId}.json`
+    ),
+    JSON.stringify(
+      session,
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
+function readRawSessionFile(
+  project,
+  sessionId
+) {
+  return JSON.parse(
+    fs.readFileSync(
+      path.join(
+        project,
+        ".claude-cost-tracker",
+        "sessions",
+        `${sessionId}.json`
+      ),
+      "utf8"
+    )
+  );
+}
+
 test(
   "recordCheckpoint stores unknown timing for a first checkpoint",
   t => {
@@ -195,7 +262,7 @@ test(
         created_at: fixedTimestamp,
         updated_at: fixedTimestamp,
         total_cost_usd: 1.5,
-        stages: []
+        checkpoints: []
       }
     );
 
@@ -214,8 +281,13 @@ test(
         "session-1"
       );
 
+    assert.equal(
+      savedSession.session_name,
+      null
+    );
+
     assert.deepEqual(
-      savedSession.stages[0],
+      savedSession.checkpoints[0],
       {
         name: "analysis",
         model: "claude-sonnet-5",
@@ -233,12 +305,11 @@ test(
 );
 
 test(
-  "recordCheckpoint remains compatible with legacy checkpoint fields",
+  "recordCheckpoint migrates legacy stages into checkpoints without losing history",
   t => {
     const { project } =
       createTestDirectories(t);
     const {
-      sessionStore,
       sessionService,
       restore
     } = loadSessionModules(project);
@@ -250,11 +321,16 @@ test(
     const currentTimestamp =
       "2026-10-11T10:05:07.000Z";
 
-    sessionStore.writeSession(
+    writeRawSessionFile(
+      project,
       "session-2",
       {
         session_id: "session-2",
+        session_name:
+          "Legacy planning session",
         model: null,
+        model_display_name:
+          "Sonnet 5",
         created_at:
           "2026-10-11T09:55:00.000Z",
         updated_at:
@@ -284,12 +360,44 @@ test(
     );
 
     const savedSession =
-      sessionStore.readSession(
+      readRawSessionFile(
+        project,
         "session-2"
       );
 
+    assert.equal(
+      savedSession.session_name,
+      "Legacy planning session"
+    );
+    assert.equal(
+      Object.hasOwn(
+        savedSession,
+        "stages"
+      ),
+      false
+    );
+    assert.equal(
+      Object.hasOwn(
+        savedSession,
+        "model_display_name"
+      ),
+      false
+    );
+
     assert.deepEqual(
-      savedSession.stages[1],
+      savedSession.checkpoints[0],
+      {
+        name: "analysis",
+        started_cost_usd: 0,
+        ended_cost_usd: 1.25,
+        cost_usd: 1.25,
+        timestamp:
+          previousTimestamp
+      }
+    );
+
+    assert.deepEqual(
+      savedSession.checkpoints[1],
       {
         name: "implementation",
         model: "undefined",
@@ -332,7 +440,7 @@ test(
         updated_at:
           sharedTimestamp,
         total_cost_usd: 3.25,
-        stages: [
+        checkpoints: [
           {
             name: "analysis",
             model: "claude-sonnet-5",
@@ -364,7 +472,7 @@ test(
       );
 
     assert.deepEqual(
-      savedSession.stages[1],
+      savedSession.checkpoints[1],
       {
         name: "implementation",
         model: "claude-sonnet-5",
@@ -382,58 +490,41 @@ test(
 );
 
 test(
-  "status prints unknown timing when the first stage start is not known",
+  "status prints unknown timing from checkpoints and shows the session name",
   t => {
     const {
       home,
       project
     } = createTestDirectories(t);
 
-    const sessionsDir = path.join(
+    writeRawSessionFile(
       project,
-      ".claude-cost-tracker",
-      "sessions"
-    );
-
-    fs.mkdirSync(sessionsDir, {
-      recursive: true
-    });
-
-    fs.writeFileSync(
-      path.join(
-        sessionsDir,
-        "session-3.json"
-      ),
-      JSON.stringify(
-        {
-          session_id: "session-4",
-          model: "claude-sonnet-5",
-          model_display_name:
-            "Sonnet 5",
-          created_at:
-            "2026-10-11T10:00:00.000Z",
-          updated_at:
-            "2026-10-11T10:05:07.000Z",
-          total_cost_usd: 2.5,
-          stages: [
-            {
-              name: "analysis",
-              model: "claude-sonnet-5",
-              cost_before: 0,
-              cost_after: 2.5,
-              cost_usd: 2.5,
-              timestamp_before:
-                null,
-              timestamp_after:
-                "2026-10-11T10:05:07.000Z",
-              time: null
-            }
-          ]
-        },
-        null,
-        2
-      ),
-      "utf8"
+      "session-4",
+      {
+        session_id: "session-4",
+        session_name:
+          "Renamed planning session",
+        model: "claude-sonnet-5",
+        created_at:
+          "2026-10-11T10:00:00.000Z",
+        updated_at:
+          "2026-10-11T10:05:07.000Z",
+        total_cost_usd: 2.5,
+        checkpoints: [
+          {
+            name: "analysis",
+            model: "claude-sonnet-5",
+            cost_before: 0,
+            cost_after: 2.5,
+            cost_usd: 2.5,
+            timestamp_before:
+              null,
+            timestamp_after:
+              "2026-10-11T10:05:07.000Z",
+            time: null
+          }
+        ]
+      }
     );
 
     const result =
@@ -448,6 +539,22 @@ test(
       result.stderr
     );
 
+    assert.match(
+      result.stdout,
+      /Session: Renamed planning session/
+    );
+    assert.match(
+      result.stdout,
+      /Session ID: session-4/
+    );
+    assert.match(
+      result.stdout,
+      /Model: claude-sonnet-5/
+    );
+    assert.match(
+      result.stdout,
+      /Checkpoints:/
+    );
     assert.match(
       result.stdout,
       /analysis\s+\$2\.5000/
@@ -467,6 +574,185 @@ test(
     assert.match(
       result.stdout,
       /to:\s+2026-10-11T10:05:07\.000Z/
+    );
+  }
+);
+
+test(
+  "proxy stores session_name using the canonical session schema",
+  t => {
+    const {
+      home,
+      project
+    } = createTestDirectories(t);
+
+    const result =
+      runProxyCli({
+        home,
+        project,
+        payload: {
+          session_id: "session-5",
+          session_name:
+            "Schema migration session",
+          model: {
+            id: "claude-opus-4",
+            display_name:
+              "Claude Opus 4"
+          },
+          cost: {
+            total_cost_usd: 1.75
+          }
+        }
+      });
+
+    assert.equal(
+      result.status,
+      0,
+      result.stderr
+    );
+
+    const savedSession =
+      readRawSessionFile(
+        project,
+        "session-5"
+      );
+
+    assert.equal(
+      savedSession.session_id,
+      "session-5"
+    );
+    assert.equal(
+      savedSession.session_name,
+      "Schema migration session"
+    );
+    assert.equal(
+      savedSession.model,
+      "claude-opus-4"
+    );
+    assert.equal(
+      savedSession.total_cost_usd,
+      1.75
+    );
+    assert.deepEqual(
+      savedSession.checkpoints,
+      []
+    );
+    assert.equal(
+      savedSession.created_at,
+      savedSession.updated_at
+    );
+    assert.equal(
+      Object.hasOwn(
+        savedSession,
+        "stages"
+      ),
+      false
+    );
+    assert.equal(
+      Object.hasOwn(
+        savedSession,
+        "model_display_name"
+      ),
+      false
+    );
+  }
+);
+
+test(
+  "proxy preserves the last known session name until a newer one is observed",
+  t => {
+    const {
+      home,
+      project
+    } = createTestDirectories(t);
+
+    const initialResult =
+      runProxyCli({
+        home,
+        project,
+        payload: {
+          session_id: "session-6",
+          session_name:
+            "Original title",
+          model: {
+            id: "claude-sonnet-5"
+          },
+          cost: {
+            total_cost_usd: 1
+          }
+        }
+      });
+
+    assert.equal(
+      initialResult.status,
+      0,
+      initialResult.stderr
+    );
+
+    const missingTitleResult =
+      runProxyCli({
+        home,
+        project,
+        payload: {
+          session_id: "session-6",
+          model: {
+            id: "claude-sonnet-5"
+          },
+          cost: {
+            total_cost_usd: 1.5
+          }
+        }
+      });
+
+    assert.equal(
+      missingTitleResult.status,
+      0,
+      missingTitleResult.stderr
+    );
+
+    let savedSession =
+      readRawSessionFile(
+        project,
+        "session-6"
+      );
+
+    assert.equal(
+      savedSession.session_name,
+      "Original title"
+    );
+
+    const renamedResult =
+      runProxyCli({
+        home,
+        project,
+        payload: {
+          session_id: "session-6",
+          session_name:
+            "Updated title",
+          model: {
+            id: "claude-sonnet-5"
+          },
+          cost: {
+            total_cost_usd: 2
+          }
+        }
+      });
+
+    assert.equal(
+      renamedResult.status,
+      0,
+      renamedResult.stderr
+    );
+
+    savedSession =
+      readRawSessionFile(
+        project,
+        "session-6"
+      );
+
+    assert.equal(
+      savedSession.session_name,
+      "Updated title"
     );
   }
 );

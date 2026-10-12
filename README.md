@@ -182,9 +182,9 @@ A simplified payload may look like:
 ```json
 {
   "session_id": "abc123",
+  "session_name": "Planning migration session",
   "model": {
-    "id": "claude-sonnet",
-    "display_name": "Claude Sonnet"
+    "id": "claude-sonnet"
   },
   "cost": {
     "total_cost_usd": 0.1234
@@ -196,8 +196,8 @@ Claude Cost Tracker uses:
 
 ```text
 session_id
+session_name
 model.id
-model.display_name
 cost.total_cost_usd
 ```
 
@@ -453,21 +453,28 @@ Each session is identified using:
 session_id
 ```
 
-A session contains information such as:
+If Claude Code exposes a renamed title, the tracker stores the latest observed
+value in `session_name`.
+
+A persisted session contains information such as:
 
 ```json
 {
   "session_id": "abc123",
+  "session_name": "Planning migration session",
   "model": "claude-sonnet",
-  "model_display_name": "Claude Sonnet",
   "created_at": "2026-08-31T10:00:00.000Z",
   "updated_at": "2026-08-31T10:30:00.000Z",
   "total_cost_usd": 0.8234,
-  "stages": []
+  "checkpoints": []
 }
 ```
 
 The session is updated whenever the proxy receives valid session and cost information.
+
+If no title has been observed yet, `session_name` is stored as `null`.
+The tracker persists only this canonical top-level schema and does not write
+`model_display_name` or `stages`.
 
 The tracker does not calculate API prices independently.
 
@@ -625,7 +632,7 @@ CLAUDE_CODE_SESSION_ID
 <session-id>.json
         │
         ├── total_cost_usd
-        └── stages[]
+        └── checkpoints[]
                │
                ▼
         append checkpoint
@@ -679,11 +686,12 @@ testing
 = $0.25
 ```
 
-The resulting session contains the individual stage costs:
+The resulting session contains the individual stage costs under
+`checkpoints`:
 
 ```json
 {
-  "stages": [
+  "checkpoints": [
     {
       "name": "analysis",
       "model": "claude-sonnet-5",
@@ -788,11 +796,12 @@ If multiple sessions exist, the CLI displays a selection menu:
 ```text
 Claude Cost Tracker — Sessions
 
-1. abc123
-   Claude Sonnet — $0.8234
+1. Planning migration session
+   abc123
+   claude-sonnet-5 — $0.8234
 
 2. def456
-   Claude Opus — $1.2401
+   claude-opus-4 — $1.2401
 
 Select session [1-2] (0 to exit):
 ```
@@ -800,12 +809,13 @@ Select session [1-2] (0 to exit):
 After selecting a session:
 
 ```text
-Session: abc123
-Model: Claude Sonnet
+Session: Planning migration session
+Session ID: abc123
+Model: claude-sonnet-5
 
 Total: $0.8234
 
-Stages:
+Checkpoints:
   planning    $0.2000
     model: claude-sonnet-5 | elapsed: Unknown
     cost: $0.0000 -> $0.2000
@@ -823,7 +833,12 @@ Stages:
     to:   2026-08-31T10:30:00.000Z
 ```
 
-The first recorded stage shows `Unknown` for its start time and elapsed duration because the tracker has no earlier checkpoint proving when that stage actually began.
+The first recorded stage shows `Unknown` for its start time and elapsed
+duration because the tracker has no earlier checkpoint proving when that stage
+actually began.
+
+If no renamed session title has been observed yet, the `status` command shows
+the raw `session_id` in the `Session:` line and omits the `Session ID:` line.
 
 Sessions are sorted by their last update time.
 
@@ -971,6 +986,7 @@ claude-cost-tracker/
 │   │   └── claude-code-config.js
 │   │
 │   ├── session/
+│   │   ├── session-record.js
 │   │   ├── session-store.js
 │   │   └── session-service.js
 │   │
@@ -1019,7 +1035,20 @@ Responsible for:
 
 * reading sessions;
 * writing sessions;
-* listing sessions.
+* listing sessions;
+* rewriting saved sessions into the canonical top-level schema.
+
+## Session Record Helpers
+
+```text
+src/session/session-record.js
+```
+
+Responsible for:
+
+* canonical session normalization;
+* top-level legacy compatibility such as `stages -> checkpoints`;
+* shared helpers for session naming and checkpoint collection access.
 
 ## Session Service
 
@@ -1031,7 +1060,8 @@ Responsible for:
 
 * checkpoint logic;
 * stage cost calculation;
-* checkpoint validation.
+* checkpoint validation;
+* appending new entries to the `checkpoints` collection.
 
 ## Status Service
 
@@ -1055,6 +1085,10 @@ cost.total_cost_usd
 ```
 
 to be available.
+
+Session naming additionally depends on Claude Code exposing `session_name` in
+the Status Line payload. If it is absent, the tracker keeps the last known
+title or stores `null`.
 
 The tracker does not independently calculate Claude API pricing from token counts.
 

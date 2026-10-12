@@ -28,17 +28,23 @@ function recordCheckpoint(sessionId, stage) {
     );
   }
  
-  if (!Array.isArray(session.stages)) {
-    session.stages = [];
+  if (
+    !Array.isArray(
+      session.checkpoints
+    )
+  ) {
+    session.checkpoints = [];
   }
 
   let previousCost = 0;
   let previousStage = null;
  
-  if (session.stages.length > 0) {
+  if (
+    session.checkpoints.length > 0
+  ) {
     previousStage =
-      session.stages[
-        session.stages.length - 1
+      session.checkpoints[
+        session.checkpoints.length - 1
       ];
  
     if (
@@ -74,7 +80,7 @@ function recordCheckpoint(sessionId, stage) {
       previousStage
     );
  
-  session.stages.push({
+  session.checkpoints.push({
     name: stage,
 
     model:

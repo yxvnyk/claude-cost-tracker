@@ -20,6 +20,9 @@ const {
     getStageTimestampBefore
 } = require("../src/session/stage-record");
 const {
+    getNonEmptyString
+} = require("../src/session/session-record");
+const {
     install: installClaudeCode,
     uninstall: uninstallClaudeCode,
     getDownstreamStatusLine
@@ -109,6 +112,39 @@ Usage:
  claude-cost-tracker status
      Show active Claude Code sessions info
 `);
+}
+
+function getSessionDisplayName(session) {
+    return (
+        getNonEmptyString(
+            session.session_name
+        ) ??
+        session.session_id
+    );
+}
+
+function getSessionModelName(session) {
+    return (
+        getNonEmptyString(
+            session.model
+        ) ??
+        "Unknown model"
+    );
+}
+
+function getObservedSessionName(
+    payload,
+    existingSession
+) {
+    return (
+        getNonEmptyString(
+            payload.session_name
+        ) ??
+        getNonEmptyString(
+            existingSession.session_name
+        ) ??
+        null
+    );
 }
  
 /*
@@ -337,10 +373,14 @@ async function status() {
     );
  
     sessions.forEach((session, index) => {
+        const label =
+            getSessionDisplayName(
+                session
+            );
         const model =
-            session.model_display_name ??
-            session.model ??
-            "Unknown model";
+            getSessionModelName(
+                session
+            );
  
         const total =
             Number(session.total_cost_usd);
@@ -351,8 +391,16 @@ async function status() {
                 : "Unknown";
  
         console.log(
-            `${index + 1}. ${session.session_id}`
+            `${index + 1}. ${label}`
         );
+
+        if (
+            label !== session.session_id
+        ) {
+            console.log(
+                `   ${session.session_id}`
+            );
+        }
  
         console.log(
             `   ${model} — ${totalText}`
@@ -474,17 +522,35 @@ async function selectSession(sessions) {
 */
  
 function printSessionStatus(session) {
+    const label =
+        getSessionDisplayName(
+            session
+        );
     const model =
-        session.model_display_name ??
-        session.model ??
-        "Unknown model";
+        getSessionModelName(
+            session
+        );
+    const checkpoints =
+        Array.isArray(
+            session.checkpoints
+        )
+            ? session.checkpoints
+            : [];
  
     const total =
         Number(session.total_cost_usd);
  
     console.log(
-        `Session: ${session.session_id}`
+        `Session: ${label}`
     );
+
+    if (
+        label !== session.session_id
+    ) {
+        console.log(
+            `Session ID: ${session.session_id}`
+        );
+    }
  
     console.log(
         `Model: ${model}`
@@ -502,11 +568,10 @@ function printSessionStatus(session) {
  
     console.log();
  
-    console.log("Stages:");
+    console.log("Checkpoints:");
  
     if (
-        !Array.isArray(session.stages) ||
-        session.stages.length === 0
+        checkpoints.length === 0
     ) {
         console.log(
             "  No checkpoints recorded."
@@ -515,7 +580,7 @@ function printSessionStatus(session) {
         return;
     }
  
-    for (const stage of session.stages) {
+    for (const stage of checkpoints) {
         const cost =
             Number(stage.cost_usd);
  
@@ -640,19 +705,18 @@ async function proxy() {
             new Date().toISOString();
  
         const updatedSession = {
-            ...existingSession,
- 
             session_id:
                 sessionId,
+
+            session_name:
+                getObservedSessionName(
+                    payload,
+                    existingSession
+                ),
  
             model:
                 payload.model?.id ??
                 existingSession.model ??
-                null,
- 
-            model_display_name:
-                payload.model?.display_name ??
-                existingSession.model_display_name ??
                 null,
  
             created_at:
@@ -665,11 +729,11 @@ async function proxy() {
             total_cost_usd:
                 totalCost,
  
-            stages:
+            checkpoints:
                 Array.isArray(
-                    existingSession.stages
+                    existingSession.checkpoints
                 )
-                    ? existingSession.stages
+                    ? existingSession.checkpoints
                     : []
         };
  

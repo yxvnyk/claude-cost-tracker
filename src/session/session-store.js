@@ -1,5 +1,8 @@
 const fs = require("fs");
 const path = require("path");
+const {
+  normalizeSession
+} = require("./session-record");
  
 const PROJECT_TRACKER_DIR = path.join(
   process.cwd(),
@@ -31,10 +34,12 @@ function readSession(sessionId) {
   }
  
   try {
-    return JSON.parse(
-      fs.readFileSync(
-        filePath,
-        "utf8"
+    return normalizeSession(
+      JSON.parse(
+        fs.readFileSync(
+          filePath,
+          "utf8"
+        )
       )
     );
   } catch {
@@ -47,6 +52,11 @@ function readSession(sessionId) {
 function writeSession(sessionId, session) {
   const filePath =
     getSessionFile(sessionId);
+  const normalizedSession =
+    normalizeSession({
+      ...session,
+      session_id: sessionId
+    });
  
   fs.mkdirSync(
     SESSIONS_DIR,
@@ -58,7 +68,7 @@ function writeSession(sessionId, session) {
   fs.writeFileSync(
     filePath,
     JSON.stringify(
-      session,
+      normalizedSession,
       null,
       2
     ),
