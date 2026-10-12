@@ -809,28 +809,13 @@ Select session [1-2] (0 to exit):
 After selecting a session:
 
 ```text
-Session: Planning migration session
-Session ID: abc123
-Model: claude-sonnet-5
-
 Total: $0.8234
+Time: 30m 0s
 
 Checkpoints:
-  planning    $0.2000
-    model: claude-sonnet-5 | elapsed: Unknown
-    cost: $0.0000 -> $0.2000
-    from: Unknown
-    to:   2026-08-31T10:05:00.000Z
-  implementation    $0.4500
-    model: claude-sonnet-5 | elapsed: 00:15:00
-    cost: $0.2000 -> $0.6500
-    from: 2026-08-31T10:05:00.000Z
-    to:   2026-08-31T10:20:00.000Z
-  testing    $0.1700
-    model: claude-sonnet-5 | elapsed: 00:10:00
-    cost: $0.6500 -> $0.8200
-    from: 2026-08-31T10:20:00.000Z
-    to:   2026-08-31T10:30:00.000Z
+  planning    $0.2000  -
+  implementation    $0.4500  15m 0s
+  testing    $0.1700  10m 0s
 ```
 
 The first recorded stage shows `Unknown` for its start time and elapsed

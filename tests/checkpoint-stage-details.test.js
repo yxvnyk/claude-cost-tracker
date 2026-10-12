@@ -490,7 +490,7 @@ test(
 );
 
 test(
-  "status prints unknown timing from checkpoints and shows the session name",
+  "status prints only total time and stages for unknown checkpoint timing",
   t => {
     const {
       home,
@@ -539,41 +539,182 @@ test(
       result.stderr
     );
 
-    assert.match(
+    assert.equal(
       result.stdout,
-      /Session: Renamed planning session/
+      [
+        "Total: $2.5000",
+        "Time: 5m 7s",
+        "",
+        "Checkpoints:",
+        "  analysis    $2.5000  -",
+        ""
+      ].join("\n")
     );
-    assert.match(
-      result.stdout,
-      /Session ID: session-4/
+  }
+);
+
+test(
+  "status prints the exact minimal human-readable status format",
+  t => {
+    const {
+      home,
+      project
+    } = createTestDirectories(t);
+
+    writeRawSessionFile(
+      project,
+      "session-4a",
+      {
+        session_id: "session-4a",
+        session_name:
+          "Human readable status session",
+        model: "claude-sonnet-5",
+        created_at:
+          "2026-10-11T10:00:00.000Z",
+        updated_at:
+          "2026-10-11T11:03:56.000Z",
+        total_cost_usd: 0.82,
+        checkpoints: [
+          {
+            name: "analysis",
+            model: "claude-sonnet-5",
+            cost_before: 0,
+            cost_after: 0.2,
+            cost_usd: 0.2,
+            timestamp_before:
+              "2026-10-11T10:00:00.000Z",
+            timestamp_after:
+              "2026-10-11T10:00:30.000Z",
+            time: "00:00:30"
+          },
+          {
+            name: "implementation",
+            model: "claude-sonnet-5",
+            cost_before: 0.2,
+            cost_after: 0.65,
+            cost_usd: 0.45,
+            timestamp_before:
+              "2026-10-11T10:00:30.000Z",
+            timestamp_after:
+              "2026-10-11T10:01:53.000Z",
+            time: "00:01:23"
+          },
+          {
+            name: "testing",
+            model: "claude-sonnet-5",
+            cost_before: 0.65,
+            cost_after: 0.82,
+            cost_usd: 0.17,
+            timestamp_before:
+              "2026-10-11T10:01:53.000Z",
+            timestamp_after:
+              "2026-10-11T11:03:56.000Z",
+            time: "01:02:03"
+          },
+          {
+            name: "review",
+            model: "claude-sonnet-5",
+            cost_before: 0.82,
+            cost_after: 0.82,
+            cost_usd: 0,
+            timestamp_before:
+              "2026-10-11T11:03:56.000Z",
+            timestamp_after:
+              "2026-10-11T11:03:56.000Z",
+            time: "00:00:00"
+          }
+        ]
+      }
     );
-    assert.match(
-      result.stdout,
-      /Model: claude-sonnet-5/
+
+    const result =
+      runStatusCli({
+        home,
+        project
+      });
+
+    assert.equal(
+      result.status,
+      0,
+      result.stderr
     );
-    assert.match(
+
+    assert.equal(
       result.stdout,
-      /Checkpoints:/
+      [
+        "Total: $0.8200",
+        "Time: 1h 3m 56s",
+        "",
+        "Checkpoints:",
+        "  analysis    $0.2000  30s",
+        "  implementation    $0.4500  1m 23s",
+        "  testing    $0.1700  1h 2m 3s",
+        "  review    $0.0000  0s",
+        ""
+      ].join("\n")
     );
-    assert.match(
-      result.stdout,
-      /analysis\s+\$2\.5000/
+  }
+);
+
+test(
+  "status prints Unknown when session or checkpoint durations are invalid",
+  t => {
+    const {
+      home,
+      project
+    } = createTestDirectories(t);
+
+    writeRawSessionFile(
+      project,
+      "session-4b",
+      {
+        session_id: "session-4b",
+        session_name:
+          "Invalid timing session",
+        model: "claude-sonnet-5",
+        created_at: "not-a-date",
+        updated_at:
+          "2026-10-11T10:05:07.000Z",
+        total_cost_usd: 1.25,
+        checkpoints: [
+          {
+            name: "analysis",
+            model: "claude-sonnet-5",
+            cost_before: 0,
+            cost_after: 1.25,
+            cost_usd: 1.25,
+            timestamp_before:
+              "2026-10-11T10:00:00.000Z",
+            timestamp_after:
+              "2026-10-11T10:05:07.000Z",
+            time: "not-a-duration"
+          }
+        ]
+      }
     );
-    assert.match(
-      result.stdout,
-      /model: claude-sonnet-5 \| elapsed: Unknown/
+
+    const result =
+      runStatusCli({
+        home,
+        project
+      });
+
+    assert.equal(
+      result.status,
+      0,
+      result.stderr
     );
-    assert.match(
+
+    assert.equal(
       result.stdout,
-      /cost: \$0\.0000 -> \$2\.5000/
-    );
-    assert.match(
-      result.stdout,
-      /from: Unknown/
-    );
-    assert.match(
-      result.stdout,
-      /to:\s+2026-10-11T10:05:07\.000Z/
+      [
+        "Total: $1.2500",
+        "Time: Unknown",
+        "",
+        "Checkpoints:",
+        "  analysis    $1.2500  -",
+        ""
+      ].join("\n")
     );
   }
 );

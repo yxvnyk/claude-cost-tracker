@@ -14,10 +14,8 @@ const {
     getStatusSessions
 } = require("../src/status/status-service");
 const {
-    getStageCostAfter,
-    getStageCostBefore,
-    getStageTimestampAfter,
-    getStageTimestampBefore
+    formatElapsedRangeForDisplay,
+    formatElapsedTimeForDisplay
 } = require("../src/session/stage-record");
 const {
     getNonEmptyString
@@ -522,14 +520,6 @@ async function selectSession(sessions) {
 */
  
 function printSessionStatus(session) {
-    const label =
-        getSessionDisplayName(
-            session
-        );
-    const model =
-        getSessionModelName(
-            session
-        );
     const checkpoints =
         Array.isArray(
             session.checkpoints
@@ -541,28 +531,22 @@ function printSessionStatus(session) {
         Number(session.total_cost_usd);
  
     console.log(
-        `Session: ${label}`
-    );
-
-    if (
-        label !== session.session_id
-    ) {
-        console.log(
-            `Session ID: ${session.session_id}`
-        );
-    }
- 
-    console.log(
-        `Model: ${model}`
-    );
- 
-    console.log();
- 
-    console.log(
         `Total: ${
             Number.isFinite(total)
                 ? `$${total.toFixed(4)}`
                 : "Unknown"
+        }`
+    );
+
+    const sessionTime =
+        formatElapsedRangeForDisplay(
+            session.created_at,
+            session.updated_at
+        );
+
+    console.log(
+        `Time: ${
+            sessionTime ?? "Unknown"
         }`
     );
  
@@ -581,6 +565,12 @@ function printSessionStatus(session) {
     }
  
     for (const stage of checkpoints) {
+        const stageName =
+            typeof stage.name === "string" &&
+            stage.name.trim() !== ""
+                ? stage.name
+                : "Unknown";
+
         const cost =
             Number(stage.cost_usd);
  
@@ -589,60 +579,13 @@ function printSessionStatus(session) {
                 ? `$${cost.toFixed(4)}`
                 : "Unknown";
  
-        console.log(
-            `  ${stage.name}    ${costText}`
-        );
-
-        const stageModel =
-            typeof stage.model === "string" &&
-            stage.model.trim() !== ""
-                ? stage.model
-                : "undefined";
-
         const stageTime =
-            typeof stage.time === "string" &&
-            stage.time.trim() !== ""
-                ? stage.time
-                : "Unknown";
+            formatElapsedTimeForDisplay(
+                stage.time
+            ) ?? "-";
 
         console.log(
-            `    model: ${stageModel} | elapsed: ${stageTime}`
-        );
-
-        const costBefore =
-            getStageCostBefore(stage);
-
-        const costAfter =
-            getStageCostAfter(stage);
-
-        const costBeforeText =
-            Number.isFinite(costBefore)
-                ? `$${costBefore.toFixed(4)}`
-                : "Unknown";
-
-        const costAfterText =
-            Number.isFinite(costAfter)
-                ? `$${costAfter.toFixed(4)}`
-                : "Unknown";
-
-        console.log(
-            `    cost: ${costBeforeText} -> ${costAfterText}`
-        );
-
-        const timestampBefore =
-            getStageTimestampBefore(stage) ??
-            "Unknown";
-
-        const timestampAfter =
-            getStageTimestampAfter(stage) ??
-            "Unknown";
-
-        console.log(
-            `    from: ${timestampBefore}`
-        );
-
-        console.log(
-            `    to:   ${timestampAfter}`
+            `  ${stageName}    ${costText}  ${stageTime}`
         );
     }
 }
