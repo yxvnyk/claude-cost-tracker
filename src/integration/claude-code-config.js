@@ -40,7 +40,7 @@ const GLOBAL_BACKUP_PATH = path.join(
 const LOCAL_TRACKER_DIR = path.join(
     process.cwd(),
     ".claude-cost-tracker"
-)
+);
  
 const LOCAL_CONFIG_PATH = path.join(
     LOCAL_TRACKER_DIR,
@@ -51,6 +51,18 @@ const LOCAL_BACKUP_PATH = path.join(
     LOCAL_TRACKER_DIR,
     "original-statusline.json"
 );
+
+const LOCAL_TRACKER_GITIGNORE_PATH = path.join(
+    LOCAL_TRACKER_DIR,
+    ".gitignore"
+);
+
+const LOCAL_TRACKER_GITIGNORE_CONTENT =
+    "# ClaudeCostTracker data files — local to each machine, not for committing.\n" +
+    "# Ignore everything in .claude-cost-tracker/ except this file itself, so transient\n" +
+    "# files (the database, daemon.pid, sockets, logs) never show up in git.\n" +
+    "*\n" +
+    "!.gitignore\n";
  
 function readJsonOrEmpty(filePath) {
     if (!fs.existsSync(filePath)) {
@@ -82,6 +94,25 @@ function writeJson(filePath, data) {
         "utf8"
     );
 }
+
+function ensureLocalTrackerGitignore() {
+    fs.mkdirSync(
+        LOCAL_TRACKER_DIR,
+        { recursive: true }
+    );
+
+    if (
+        !fs.existsSync(
+            LOCAL_TRACKER_GITIGNORE_PATH
+        )
+    ) {
+        fs.writeFileSync(
+            LOCAL_TRACKER_GITIGNORE_PATH,
+            LOCAL_TRACKER_GITIGNORE_CONTENT,
+            "utf8"
+        );
+    }
+}
  
 function install(isLocal, proxyCommand) {
     const settingsPath = isLocal
@@ -100,6 +131,10 @@ function install(isLocal, proxyCommand) {
         settings.statusLine?.command ===
         proxyCommand
     ) {
+        if (isLocal) {
+            ensureLocalTrackerGitignore();
+        }
+
         return {
             installed: false,
             alreadyInstalled: true,
@@ -111,66 +146,63 @@ function install(isLocal, proxyCommand) {
         settings.statusLine ?? null;
  
     if (isLocal) {
-    fs.mkdirSync(
-        LOCAL_TRACKER_DIR,
-        { recursive: true }
-    );
+        ensureLocalTrackerGitignore();
  
-    writeJson(
-        LOCAL_BACKUP_PATH,
-        {
-            statusLine:
-                existingStatusLine
-        }
-    );
+        writeJson(
+            LOCAL_BACKUP_PATH,
+            {
+                statusLine:
+                    existingStatusLine
+            }
+        );
  
-    writeJson(
-        LOCAL_CONFIG_PATH,
-        {
-            downstream:
-                existingStatusLine
-                    ? {
-                        type:
-                            existingStatusLine.type ??
-                            "command",
+        writeJson(
+            LOCAL_CONFIG_PATH,
+            {
+                downstream:
+                    existingStatusLine
+                        ? {
+                            type:
+                                existingStatusLine.type ??
+                                "command",
  
-                        command:
-                            existingStatusLine.command
-                    }
-                    : null
-        }
-    );
-} else {
-    fs.mkdirSync(
-        APP_DIR,
-        { recursive: true }
-    );
+                            command:
+                                existingStatusLine.command
+                        }
+                        : null
+            }
+        );
+    } else {
+        fs.mkdirSync(
+            APP_DIR,
+            { recursive: true }
+        );
  
-    writeJson(
-        GLOBAL_BACKUP_PATH,
-        {
-            statusLine:
-                existingStatusLine
-        }
-    );
+        writeJson(
+            GLOBAL_BACKUP_PATH,
+            {
+                statusLine:
+                    existingStatusLine
+            }
+        );
  
-    writeJson(
-        GLOBAL_CONFIG_PATH,
-        {
-            downstream:
-                existingStatusLine
-                    ? {
-                        type:
-                            existingStatusLine.type ??
-                            "command",
+        writeJson(
+            GLOBAL_CONFIG_PATH,
+            {
+                downstream:
+                    existingStatusLine
+                        ? {
+                            type:
+                                existingStatusLine.type ??
+                                "command",
  
-                        command:
-                            existingStatusLine.command
-                    }
-                    : null
-        }
-    );
-}
+                            command:
+                                existingStatusLine.command
+                        }
+                        : null
+            }
+        );
+    }
  
     settings.statusLine = {
         type: "command",

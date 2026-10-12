@@ -267,9 +267,22 @@ Tracker configuration:
 
 ```text
 <project>/.claude-cost-tracker/
+├── .gitignore
 ├── config.json
 └── original-statusline.json
 ```
+
+`setup --local` also writes `<project>/.claude-cost-tracker/.gitignore` with this policy:
+
+```gitignore
+# ClaudeCostTracker data files — local to each machine, not for committing.
+# Ignore everything in .claude-cost-tracker/ except this file itself, so transient
+# files (the database, daemon.pid, sockets, logs) never show up in git.
+*
+!.gitignore
+```
+
+This keeps machine-specific tracker artifacts such as the database, `daemon.pid`, sockets, and logs out of git while leaving the ignore policy itself visible in the repository. If the file is removed later, rerunning `claude-cost-tracker setup --local` recreates it.
 
 The tracker keeps its project-specific state outside of `.claude`.
 
@@ -281,11 +294,13 @@ The tracker keeps its project-specific state outside of `.claude`.
 | -------------------- | ------------------------- | --------------------------------- |
 | Claude Code settings | `~/.claude/settings.json` | `<project>/.claude/settings.json` |
 | Tracker directory    | `~/.claude-cost-tracker/` | `<project>/.claude-cost-tracker/` |
+| Tracker ignore file  | Not created               | `<project>/.claude-cost-tracker/.gitignore` |
 | Scope                | All projects              | Current project                   |
 | Installation         | `setup`                   | `setup --local`                   |
 | Uninstallation       | `uninstall`               | `uninstall --local`               |
 
 Local installation is useful when a framework or project needs its Claude Code integration to be isolated from the user's global environment.
+Global installation keeps tracker state under `~/.claude-cost-tracker/` and does not create a project-local `.claude-cost-tracker/.gitignore`.
 
 
 
@@ -844,6 +859,8 @@ Install for the current project:
 ```bash
 claude-cost-tracker setup --local
 ```
+
+This command also creates, or backfills if it is missing, `<project>/.claude-cost-tracker/.gitignore` with the local-only ignore policy shown in [Local Installation](#local-installation).
 
 ---
 
