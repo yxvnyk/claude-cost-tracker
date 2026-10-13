@@ -286,6 +286,17 @@ This keeps machine-specific tracker artifacts such as the database, `daemon.pid`
 
 The tracker keeps its project-specific state outside of `.claude`.
 
+When `setup --local` decides what to run downstream, it preserves the user's existing status-line
+command with this precedence:
+
+1. the project-local `statusLine` command, when the project already defines one;
+2. otherwise the effective global `statusLine` command;
+3. otherwise no downstream command.
+
+The "effective global" command means the user's actual global renderer even when the global scope
+already uses Claude Cost Tracker itself. In that case, the local install reuses the global tracker's
+saved downstream command instead of chaining the proxy into itself.
+
 ---
 
 # Global vs Local Installation
@@ -301,6 +312,8 @@ The tracker keeps its project-specific state outside of `.claude`.
 
 Local installation is useful when a framework or project needs its Claude Code integration to be isolated from the user's global environment.
 Global installation keeps tracker state under `~/.claude-cost-tracker/` and does not create a project-local `.claude-cost-tracker/.gitignore`.
+When both scopes exist, the project-local downstream command wins; if the local install has no
+project-specific downstream command to preserve, it falls back to the effective global status line.
 
 
 
@@ -358,6 +371,11 @@ config.json
 ```
 
 This keeps restoration state separate from runtime integration state.
+
+For a local installation, `config.json` stores the project-local status-line command when one existed
+before setup. If the project had no local `statusLine`, the tracker stores the effective global
+status-line command instead so local cost tracking does not suppress the user's existing global
+renderer.
 
 ---
 

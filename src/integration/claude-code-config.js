@@ -113,6 +113,98 @@ function ensureLocalTrackerGitignore() {
         );
     }
 }
+
+function normalizeStatusLine(
+    statusLine
+) {
+    if (
+        !statusLine ||
+        typeof statusLine.command !==
+            "string" ||
+        statusLine.command.trim() === ""
+    ) {
+        return null;
+    }
+
+    return {
+        type:
+            statusLine.type ??
+            "command",
+        command:
+            statusLine.command
+    };
+}
+
+function getGlobalDownstreamStatusLine(
+    proxyCommand
+) {
+    const globalSettings =
+        readJsonOrEmpty(
+            GLOBAL_SETTINGS_PATH
+        );
+
+    const globalStatusLine =
+        normalizeStatusLine(
+            globalSettings.statusLine
+        );
+
+    if (
+        globalStatusLine?.command ===
+        proxyCommand
+    ) {
+        const globalConfig =
+            readJsonOrEmpty(
+                GLOBAL_CONFIG_PATH
+            );
+
+        return normalizeStatusLine(
+            globalConfig.downstream
+        );
+    }
+
+    return globalStatusLine;
+}
+
+function ensureLocalDownstreamConfig(
+    proxyCommand
+) {
+    const localConfig =
+        readJsonOrEmpty(
+            LOCAL_CONFIG_PATH
+        );
+
+    const configuredDownstream =
+        normalizeStatusLine(
+            localConfig.downstream
+        );
+
+    if (configuredDownstream) {
+        return configuredDownstream;
+    }
+
+    const localBackup =
+        readJsonOrEmpty(
+            LOCAL_BACKUP_PATH
+        );
+
+    const fallbackDownstream =
+        normalizeStatusLine(
+            localBackup.statusLine
+        ) ??
+        getGlobalDownstreamStatusLine(
+            proxyCommand
+        );
+
+    writeJson(
+        LOCAL_CONFIG_PATH,
+        {
+            downstream:
+                fallbackDownstream
+        }
+    );
+
+    return fallbackDownstream;
+}
  
 function install(isLocal, proxyCommand) {
     const settingsPath = isLocal
@@ -133,6 +225,9 @@ function install(isLocal, proxyCommand) {
     ) {
         if (isLocal) {
             ensureLocalTrackerGitignore();
+            ensureLocalDownstreamConfig(
+                proxyCommand
+            );
         }
 
         return {
@@ -144,9 +239,20 @@ function install(isLocal, proxyCommand) {
  
     const existingStatusLine =
         settings.statusLine ?? null;
+
+    const normalizedExistingStatusLine =
+        normalizeStatusLine(
+            existingStatusLine
+        );
  
     if (isLocal) {
         ensureLocalTrackerGitignore();
+
+        const downstreamStatusLine =
+            normalizedExistingStatusLine ??
+            getGlobalDownstreamStatusLine(
+                proxyCommand
+            );
  
         writeJson(
             LOCAL_BACKUP_PATH,
@@ -160,16 +266,7 @@ function install(isLocal, proxyCommand) {
             LOCAL_CONFIG_PATH,
             {
                 downstream:
-                    existingStatusLine
-                        ? {
-                            type:
-                                existingStatusLine.type ??
-                                "command",
- 
-                            command:
-                                existingStatusLine.command
-                        }
-                        : null
+                    downstreamStatusLine
             }
         );
     } else {
@@ -190,16 +287,7 @@ function install(isLocal, proxyCommand) {
             GLOBAL_CONFIG_PATH,
             {
                 downstream:
-                    existingStatusLine
-                        ? {
-                            type:
-                                existingStatusLine.type ??
-                                "command",
- 
-                            command:
-                                existingStatusLine.command
-                        }
-                        : null
+                    normalizedExistingStatusLine
             }
         );
     }
@@ -339,15 +427,19 @@ function getDownstreamStatusLine(proxyCommand) {
                 LOCAL_CONFIG_PATH
             );
  
-        return localConfig.downstream ?? null;
-    }
- 
-    const globalConfig =
-        readJsonOrEmpty(
-            GLOBAL_CONFIG_PATH
+        return (
+            normalizeStatusLine(
+                localConfig.downstream
+            ) ??
+            getGlobalDownstreamStatusLine(
+                proxyCommand
+            )
         );
- 
-    return globalConfig.downstream ?? null;
+    }
+
+    return getGlobalDownstreamStatusLine(
+        proxyCommand
+    );
 }
  
 module.exports = {
