@@ -25,6 +25,12 @@ const {
     uninstall: uninstallClaudeCode,
     getDownstreamStatusLine
 } = require("../src/integration/claude-code-config");
+const {
+    runDoctor
+} = require("../src/integration/doctor");
+const {
+    formatDoctorReport
+} = require("../src/integration/doctor-output");
 
 
 /*
@@ -66,6 +72,10 @@ async function main() {
 
         case "status":
             await status();
+            break;
+
+        case "doctor":
+            await doctor();
             break;
  
         default:
@@ -109,6 +119,15 @@ Usage:
 
  claude-cost-tracker status
      Show active Claude Code sessions info
+
+ claude-cost-tracker doctor
+     Check global Claude Cost Tracker setup
+
+ claude-cost-tracker doctor --local
+     Check Claude Cost Tracker setup in the current project
+
+ claude-cost-tracker doctor [--local] --fix
+     Repair safe setup issues in the selected scope
 `);
 }
 
@@ -142,6 +161,25 @@ function getObservedSessionName(
             existingSession.session_name
         ) ??
         null
+    );
+}
+
+function supportsColor() {
+    return Boolean(
+        process.stdout &&
+        process.stdout.isTTY
+    );
+}
+
+function printDoctorReport(report) {
+    console.log(
+        formatDoctorReport(
+            report,
+            {
+                color:
+                    supportsColor()
+            }
+        )
     );
 }
  
@@ -232,7 +270,32 @@ async function uninstall() {
         } installation removed.`
     );
 }
- 
+
+/*
+ * ---------------------------------------------------------
+ * DOCTOR
+ * ---------------------------------------------------------
+ */
+
+async function doctor() {
+    const isLocal =
+        process.argv.includes("--local");
+    const applyFix =
+        process.argv.includes("--fix");
+    const report =
+        runDoctor(
+            isLocal
+                ? "local"
+                : "global",
+            PROXY_COMMAND,
+            {
+                fix: applyFix
+            }
+        );
+
+    printDoctorReport(report);
+}
+
 /*
  * ---------------------------------------------------------
  * CHECKPOINT

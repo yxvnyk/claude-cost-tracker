@@ -443,9 +443,25 @@ function getDownstreamStatusLine(proxyCommand) {
 }
  
 module.exports = {
+    APP_DIR,
+    GLOBAL_CLAUDE_DIR,
+    GLOBAL_SETTINGS_PATH,
+    LOCAL_CLAUDE_DIR,
+    LOCAL_SETTINGS_PATH,
+    GLOBAL_CONFIG_PATH,
+    GLOBAL_BACKUP_PATH,
+    LOCAL_TRACKER_DIR,
+    LOCAL_CONFIG_PATH,
+    LOCAL_BACKUP_PATH,
+    LOCAL_TRACKER_GITIGNORE_PATH,
+    LOCAL_TRACKER_GITIGNORE_CONTENT,
     install,
     uninstall,
     getDownstreamStatusLine,
+    getGlobalDownstreamStatusLine,
+    ensureLocalDownstreamConfig,
+    ensureLocalTrackerGitignore,
+    normalizeStatusLine,
     readJsonOrEmpty,
     writeJson
 };

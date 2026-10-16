@@ -58,12 +58,14 @@ Claude Cost Tracker also provides Status Line middleware functionality. This all
   - [Why This Is Useful for Skills](#why-this-is-useful-for-skills)
   - [Explicit Session ID](#explicit-session-id)
 - [Status Command](#status-command)
+- [Doctor Command](#doctor-command)
 - [CLI Reference](#cli-reference)
   - [Install](#install)
   - [Uninstall](#uninstall)
   - [Proxy](#proxy)
   - [Checkpoint](#checkpoint)
   - [Status](#status)
+  - [Doctor](#doctor)
 - [Uninstallation](#uninstallation)
 - [Project Structure](#project-structure)
 - [Limitations](#limitations)
@@ -862,6 +864,74 @@ Sessions are sorted by their last update time.
 
 ---
 
+# Doctor Command
+
+Use `doctor` to inspect Claude Cost Tracker setup rather than session data.
+
+The command answers:
+
+* is the tracker set up in the selected scope;
+* what downstream Status Line command is active there;
+* whether the selected scope has repairable setup problems;
+* whether manual repair is required.
+
+By default, `doctor` checks the **global** installation:
+
+```bash
+claude-cost-tracker doctor
+```
+
+To inspect the **current project** instead:
+
+```bash
+claude-cost-tracker doctor --local
+```
+
+To apply safe fixes in the selected scope:
+
+```bash
+claude-cost-tracker doctor --fix
+claude-cost-tracker doctor --local --fix
+```
+
+`--fix` is intentionally conservative:
+
+* it may recreate generated tracker files such as project-local `.gitignore` or derived downstream config;
+* it does **not** silently run `setup`;
+* it does **not** invent missing backup state such as `original-statusline.json`.
+
+Example when the tracker is not installed globally:
+
+```text
+Claude Cost Tracker Health Check
+
+Scope: global
+    Result: INFO
+
+  Setup globally
+    ✗ Not set up
+    Claude Cost Tracker is not enabled globally.
+    Run: claude-cost-tracker setup
+```
+
+Example when a project-local install falls back to a global downstream command:
+
+```text
+Claude Cost Tracker Health Check
+
+Scope: project
+    Result: OK
+
+  Setup in project
+    ✓ Set up
+    Downstream command source: global fallback
+    Downstream command: npx -y ccstatusline@latest
+```
+
+In an interactive terminal, the report title is highlighted in blue, warnings in yellow, failures in red, successful health lines in green, and informational status lines in cyan. Redirected or piped output stays plain text.
+
+---
+
 # CLI Reference
 
 ## Install
@@ -939,6 +1009,31 @@ Display tracked sessions:
 ```bash
 claude-cost-tracker status
 ```
+
+---
+
+## Doctor
+
+Inspect global setup:
+
+```bash
+claude-cost-tracker doctor
+```
+
+Inspect the current project:
+
+```bash
+claude-cost-tracker doctor --local
+```
+
+Repair safe setup issues in the selected scope:
+
+```bash
+claude-cost-tracker doctor --fix
+claude-cost-tracker doctor --local --fix
+```
+
+`doctor` reports one downstream command per scope, or explicitly reports that no downstream command is configured.
 
 ---
 
