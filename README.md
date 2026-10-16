@@ -66,6 +66,7 @@ Claude Cost Tracker also provides Status Line middleware functionality. This all
   - [Checkpoint](#checkpoint)
   - [Status](#status)
   - [Doctor](#doctor)
+  - [Report](#report)
 - [Uninstallation](#uninstallation)
 - [Project Structure](#project-structure)
 - [Limitations](#limitations)
@@ -932,6 +933,27 @@ In an interactive terminal, the report title is highlighted in blue, warnings in
 
 ---
 
+# Report Command
+
+Generate a self-contained HTML report of all tracked sessions:
+
+```bash
+claude-cost-tracker report
+```
+
+The command writes `.claude-cost-tracker/report.html` in the current project directory and prints its absolute path to stdout. Open the file in any browser — no web server or internet connection required.
+
+The report has two tabs:
+
+- **Sessions** — all sessions newest-to-oldest. Clicking a row reveals the models used, date range, total cost, and a per-stage breakdown (name, cost, elapsed time).
+- **Stages** — every unique stage name across all sessions with aggregate cost stats (total/avg/min/max). Clicking a stage name opens a detail modal showing cost stats, time stats (total/avg/min/max), and a per-session occurrence table.
+
+A dark/light mode toggle is available in the top-right corner; the choice is saved in the browser.
+
+If `.claude-cost-tracker/` does not exist, the command exits non-zero with an error. If the directory exists but contains no sessions, it exits with an informational message.
+
+---
+
 # CLI Reference
 
 ## Install
@@ -1037,6 +1059,18 @@ claude-cost-tracker doctor --local --fix
 
 ---
 
+## Report
+
+Generate an HTML report of all tracked sessions in the current project:
+
+```bash
+claude-cost-tracker report
+```
+
+Writes `.claude-cost-tracker/report.html` and prints its absolute path to stdout. The file is fully self-contained (no external network requests). The report includes a Sessions tab, a Stages tab with aggregate stats, per-stage cost and time breakdowns in a modal, and a dark/light mode toggle.
+
+---
+
 # Uninstallation
 
 The tracker is designed to be removable without permanently modifying the user's existing Status Line.
@@ -1104,6 +1138,9 @@ claude-cost-tracker/
 │   │   ├── session-record.js
 │   │   ├── session-store.js
 │   │   └── session-service.js
+│   │
+│   ├── report/
+│   │   └── report-html.js
 │   │
 │   └── status/
 │       └── status-service.js

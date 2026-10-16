@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 
 const os = require("os");
+const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const {
     readSession,
     writeSession,
+    getSessions,
 } = require("../src/session/session-store");
+const {
+    generateReportHtml,
+} = require("../src/report/report-html");
 const {
     recordCheckpoint
 } = require("../src/session/session-service");
@@ -77,7 +82,11 @@ async function main() {
         case "doctor":
             await doctor();
             break;
- 
+
+        case "report":
+            await report();
+            break;
+
         default:
             printHelp();
             process.exit(1);
@@ -128,6 +137,9 @@ Usage:
 
  claude-cost-tracker doctor [--local] --fix
      Repair safe setup issues in the selected scope
+
+ claude-cost-tracker report
+     Generate an HTML report of all tracked sessions
 `);
 }
 
@@ -294,6 +306,48 @@ async function doctor() {
         );
 
     printDoctorReport(report);
+}
+
+/*
+ * ---------------------------------------------------------
+ * REPORT
+ * ---------------------------------------------------------
+ */
+
+async function report() {
+    const trackerDir = path.join(
+        process.cwd(),
+        ".claude-cost-tracker"
+    );
+
+    if (!fs.existsSync(trackerDir)) {
+        console.error(
+            "Claude Cost Tracker is not set up in this project."
+        );
+        console.error(
+            "Run: claude-cost-tracker setup --local"
+        );
+        process.exit(1);
+    }
+
+    const sessions = getSessions();
+
+    if (sessions.length === 0) {
+        console.log("No sessions found.");
+        return;
+    }
+
+    sessions.sort(
+        (a, b) =>
+            (b.created_at ? Date.parse(b.created_at) : 0) -
+            (a.created_at ? Date.parse(a.created_at) : 0)
+    );
+
+    const html = generateReportHtml(sessions);
+    const reportPath = path.join(trackerDir, "report.html");
+
+    fs.writeFileSync(reportPath, html, "utf8");
+    console.log(reportPath);
 }
 
 /*
